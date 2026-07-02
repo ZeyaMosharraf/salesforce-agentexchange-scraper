@@ -2,6 +2,7 @@ import requests
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from src.utils.logger import logger
 
 from src.config import settings
 
@@ -21,17 +22,14 @@ class SalesforceClient:
 
     def _create_session(self) -> requests.Session:
 
+        logger.info("Creating HTTP session")
+
         session = requests.Session()
 
         retry = Retry(
             total=3,
             backoff_factor=2,
-            status_forcelist=[
-                429,
-                500,
-                502,
-                503,
-                504,
+            status_forcelist=[429, 500, 502, 503, 504,
             ],
             allowed_methods=["POST"],
         )
@@ -41,17 +39,28 @@ class SalesforceClient:
         session.mount("https://", adapter)
         session.mount("http://", adapter)
 
+        logger.info("HTTP session created successfully")
+
         return session
 
     def post(self, payload: dict) -> dict:
 
-        response = self.session.post(
-            url=settings.api_url,
-            json=payload,
-            headers=self.headers,
-            timeout=settings.request_timeout,
-        )
+        try:
+            logger.info("Sending POST request to Salesforce API")
 
-        response.raise_for_status()
+            response = self.session.post(
+                url=settings.api_url,
+                json=payload,
+                headers=self.headers,
+                timeout=settings.request_timeout,
+            )
+
+            response.raise_for_status()
+
+            logger.info(f"Status Code: {response.status_code}")
+
+        except  requests.RequestException as e:
+                logger.error(f"Salesforce API request failed: {e}")
+                raise
 
         return response.json()
