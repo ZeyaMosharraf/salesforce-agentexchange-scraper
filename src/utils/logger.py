@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-LOG_DIR = Path("logs")
+LOG_DIR = Path("output/logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 LOG_FILE = LOG_DIR / "scraper.log"

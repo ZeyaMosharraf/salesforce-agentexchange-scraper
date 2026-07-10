@@ -7,10 +7,7 @@ from src.utils.logger import logger
 
 class PartnerTransformation:
 
-    def transform(
-        self,
-        raw_data: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def transform(self, raw_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         logger.info("Starting partner transformation")
 
@@ -25,7 +22,7 @@ class PartnerTransformation:
                 partners.extend(parsed)
 
             logger.info(
-                f"Extracted {len(partners)} partners"
+                f"Partner transformation: Extracted {len(partners)} partners"
             )
 
             return partners
@@ -38,12 +35,9 @@ class PartnerTransformation:
 
             raise
 
-    def _parse_response(
-        self,
-        response: dict[str, Any]
-    ) -> list[dict[str, Any]]:
+    def _parse_response(self, response: dict[str, Any]) -> list[dict[str, Any]]:
 
-        return_value = response["data"]["returnValue"]
+        return_value = response["returnValue"]
 
         if isinstance(return_value, str):
             return_value = json.loads(return_value)
@@ -55,75 +49,67 @@ class PartnerTransformation:
             for partner in partners
         ]
 
-    def _flatten_partner(
-        self,
-        record: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _flatten_partner(self, record: dict[str, Any]) -> dict[str, Any]:
 
-        partner = record.get("partner", {})
+        p = record.get("partner", {})
 
         return {
 
-            "id": partner.get("Id", ""),
+            "id": p.get("Id", ""),
 
-            "name": partner.get("Name", ""),
+            "name": p.get("Name", ""),
 
-            "headquarters": partner.get(
+            "headquarters": p.get(
                 "Headquarters__c",
                 "",
             ),
 
-            "listing_url": partner.get(
+            "listing_url": p.get(
                 "AppExchange_Listing_URL__c",
                 "",
             ),
 
-            "logo_url": partner.get(
-                "Logo_Image__c",
-                "",
-            ),
-
-            "description": partner.get(
+            "description": p.get(
                 "Description__c",
                 "",
             ),
 
-            "projects": partner.get(
+            "projects": p.get(
                 "Number_of_Projects__c",
                 0,
             ),
 
-            "credentials": partner.get(
+            "credentials": p.get(
                 "Number_of_Credentials__c",
                 0,
             ),
 
-            "reviews": partner.get(
+            "reviews": p.get(
                 "Review_Count__c",
                 0,
             ),
 
-            "rating": partner.get(
+            "rating": p.get(
                 "AppExchange_Rating__c",
                 0,
             ),
 
-            "weighted_rating": partner.get(
+            "weighted_rating": p.get(
                 "Weighted_Rating__c",
                 0,
             ),
 
-            "partner_score": partner.get(
+            "partner_score": p.get(
                 "PF_Total_Score__c",
                 0,
             ),
 
-            "diverse_owned": partner.get(
+            "diverse_owned": p.get(
                 "PF_Is_Diverse_Owned_Business__c",
                 False,
             ),
 
-            "pledge_1_percent": partner.get(
+            "pledge_1_percent": p.get(
                 "PF_Is_Pledge_1_Percent__c",
                 False,
             ),

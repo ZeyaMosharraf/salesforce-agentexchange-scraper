@@ -1,7 +1,5 @@
-from .filters import PartnerFilter
-from .partner import Partner
+from .partner_filter import PartnerFilter
 
 __all__ = [
-    "Partner",
-    "PartnerFilter"
+    "PartnerFilter",
 ]

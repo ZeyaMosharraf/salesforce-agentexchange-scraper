@@ -50,27 +50,30 @@ class HtmlClient:
 
         return session
 
-    def get(self, url: str) -> str:
+    def get(self, url: str) -> str | None:
 
         try:
-
-            logger.info(
-                f"Downloading HTML: {url}"
-            )
-
             response = self.session.get(
-                url=url,
+                url,
                 headers=self.headers,
                 timeout=settings.request_timeout,
-            )
-
-            logger.info(
-                f"Status Code: {response.status_code}"
             )
 
             response.raise_for_status()
 
             return response.text
+
+        except requests.HTTPError as e:
+
+            if e.response.status_code == 404:
+
+                logger.warning(
+                    f"HTML page not found: {url}"
+                )
+
+                return None
+
+            raise
 
         except requests.RequestException as e:
 

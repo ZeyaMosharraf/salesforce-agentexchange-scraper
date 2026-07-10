@@ -1,31 +1,83 @@
-from src.clients import HtmlClient
-from src.transformations import HtmlParserService
+from typing import Any
+from src.utils.logger import logger
+
+from src.clients.html_client import HtmlClient
+from src.transformations.html_transformation import HtmlTransformation
+from src.transformations.partner_transformation import PartnerTransformation
+from src.transformations.merge_transformation import MergeTransformation
+
 
 class TransformationService:
 
     def __init__(self):
 
         self.html_client = HtmlClient()
-        self.html_parser = HtmlParserService()
 
-    def transform(self, raw_data):
+        self.partner_transformation = PartnerTransformation()
 
-        partners = self._parse_response(raw_data)
+        self.html_transformation = HtmlTransformation()
 
-        transformed = []
+        self.merge_transformation = MergeTransformation()
 
-        for partner in partners:
+    def transform(self, raw_data: list[dict[str, Any]],) -> list[dict[str, Any]]:
 
-            api_data = self._flatten_partner(partner)
+        logger.info("Starting transformation pipeline")
 
-            html = self.html_client.get(
-                api_data["listingUrl"]
+        transformed_partners = []
+
+        try:
+
+            partners = self.partner_transformation.transform(
+                raw_data
             )
 
-            html_data = self.html_parser.parse(html)
+            logger.info(
+            f"Received {len(partners)} partners from API transformation"
+            )
 
-            api_data.update(html_data)
+            for partner in partners:
+                
+                logger.info(
+                f"Processing {len(partners)} partners"
+                )
 
-            transformed.append(api_data)
+                html = self.html_client.get(
+                    partner["listing_url"]
+                )
 
-        return transformed
+                html = self.html_client.get(
+                partner["listing_url"]
+                )
+
+                if html is None:
+
+                    partner["html_status"] = "Not Found"
+
+                    transformed_partners.append(partner)
+
+                    continue
+
+                html_data = self.html_transformation.transform(html)
+
+                merged_partner = self.merge_transformation.transform(
+                    partner,
+                    html_data,
+                )
+
+                transformed_partners.append(
+                    merged_partner
+                )
+
+            logger.info(
+                f"Transformation completed for {len(transformed_partners)} partners"
+            )
+
+            return transformed_partners
+
+        except Exception:
+
+            logger.exception(
+                "Transformation pipeline failed"
+            )
+
+            raise

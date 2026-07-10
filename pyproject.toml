@@ -1,0 +1,39 @@
+[project]
+name = "salesforce-agentexchange-scraper"
+version = "1.0.0"
+description = "Production-ready Salesforce AppExchange partner data extraction and HTML enrichment pipeline."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Zeya Mosharraf" }
+]
+
+dependencies = [
+    "beautifulsoup4>=4.13.0",
+    "lxml>=6.0.0",
+    "pandas>=2.3.0",
+    "python-dotenv>=1.1.0",
+    "requests>=2.32.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]

@@ -60,7 +60,7 @@ class SalesforceClient:
             logger.info(f"Status Code: {response.status_code}")
 
         except  requests.RequestException as e:
-                logger.error(f"Salesforce API request failed: {e}")
+                logger.exception(f"Salesforce API request failed: {e}")
                 raise
 
         return response.json()
