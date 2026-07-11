@@ -47,9 +47,7 @@ class ExtractionService:
 
                     break
 
-                print("Partners:", len(partners))
                 responses.append(response)
-                print("Responses:", len(responses))
 
                 logger.info(
                     f"Fetched offset {offset} ({len(partners)} partners)"

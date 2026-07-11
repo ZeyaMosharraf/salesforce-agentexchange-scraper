@@ -6,6 +6,8 @@ from src.transformations.html_transformation import HtmlTransformation
 from src.transformations.partner_transformation import PartnerTransformation
 from src.transformations.merge_transformation import MergeTransformation
 
+from concurrent.futures import ThreadPoolExecutor
+
 
 class TransformationService:
 
@@ -27,45 +29,17 @@ class TransformationService:
 
         try:
 
-            partners = self.partner_transformation.transform(
-                raw_data
-            )
+            partners = self.partner_transformation.transform(raw_data)
 
-            logger.info(
-            f"Received {len(partners)} partners from API transformation"
-            )
+            logger.info(f"Received {len(partners)} partners from API transformation")
 
-            for partner in partners:
-                
-                logger.info(
-                f"Processing {len(partners)} partners"
-                )
+            with ThreadPoolExecutor(max_workers=5) as executor:
 
-                html = self.html_client.get(
-                    partner["listing_url"]
-                )
-
-                html = self.html_client.get(
-                partner["listing_url"]
-                )
-
-                if html is None:
-
-                    partner["html_status"] = "Not Found"
-
-                    transformed_partners.append(partner)
-
-                    continue
-
-                html_data = self.html_transformation.transform(html)
-
-                merged_partner = self.merge_transformation.transform(
-                    partner,
-                    html_data,
-                )
-
-                transformed_partners.append(
-                    merged_partner
+                transformed_partners = list(
+                    executor.map(
+                        self.process_partner,
+                        partners
+                    )
                 )
 
             logger.info(
@@ -81,3 +55,24 @@ class TransformationService:
             )
 
             raise
+
+    def process_partner(self,partner: dict[str, Any]) -> dict[str, Any]:
+
+        html = self.html_client.get(
+            partner["listing_url"]
+        )
+
+        if html is None:
+
+            partner["html_status"] = "Not Found"
+
+            return partner
+
+        html_data = self.html_transformation.transform(
+            html
+        )
+
+        return self.merge_transformation.transform(
+            partner,
+            html_data,
+        )
