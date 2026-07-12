@@ -7,6 +7,7 @@ from src.transformations.partner_transformation import PartnerTransformation
 from src.transformations.merge_transformation import MergeTransformation
 
 from concurrent.futures import ThreadPoolExecutor
+from src.config import settings
 
 
 class TransformationService:
@@ -33,7 +34,7 @@ class TransformationService:
 
             logger.info(f"Received {len(partners)} partners from API transformation")
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
 
                 transformed_partners = list(
                     executor.map(

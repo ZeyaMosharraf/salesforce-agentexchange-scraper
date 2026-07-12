@@ -49,10 +49,6 @@ class ExtractionService:
 
                 responses.append(response)
 
-                logger.info(
-                    f"Fetched offset {offset} ({len(partners)} partners)"
-                )
-
                 print(
                 f"\r[Extraction] Offset: {offset} | Partners: {len(partners)}",
                 end="",
@@ -69,7 +65,7 @@ class ExtractionService:
 
                 raise
             
-            print()
+        print()
 
         logger.info(
             f"Extraction completed ({len(responses)} responses)"

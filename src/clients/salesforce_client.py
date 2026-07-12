@@ -39,14 +39,11 @@ class SalesforceClient:
         session.mount("https://", adapter)
         session.mount("http://", adapter)
 
-        logger.info("HTTP session created successfully")
-
         return session
 
     def post(self, payload: dict) -> dict:
 
         try:
-            logger.info("Sending POST request to Salesforce API")
 
             response = self.session.post(
                 url=settings.api_url,
@@ -56,8 +53,6 @@ class SalesforceClient:
             )
 
             response.raise_for_status()
-
-            logger.info(f"Status Code: {response.status_code}")
 
         except  requests.RequestException as e:
                 logger.exception(f"Salesforce API request failed: {e}")

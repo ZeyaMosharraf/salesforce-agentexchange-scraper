@@ -9,7 +9,6 @@ class HtmlTransformation:
     def transform(self, html: str) -> dict[str, Any]:
 
         try:
-                logger.info("Starting HTML transformation")
 
                 soup = BeautifulSoup(html, "lxml")
 
@@ -29,7 +28,6 @@ class HtmlTransformation:
                     "highlight" : self._parse_highlights(soup),
                     "overview" : self._parse_overview(soup),
                 }
-                logger.info("HTML transformation completed")
 
                 return result
 

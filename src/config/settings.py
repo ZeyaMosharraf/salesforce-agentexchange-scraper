@@ -24,6 +24,7 @@ class Settings:
     api_url: str = os.getenv("API_URL", "")
     request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "30"))
     user_agent: str = os.getenv("USER_AGENT", "Mozilla/5.0")
+    MAX_WORKERS: int = 8
 
 
 settings = Settings()
