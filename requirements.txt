@@ -1,0 +1,5 @@
+beautifulsoup4>=4.13.0
+lxml>=6.0.0
+pandas>=2.3.0
+python-dotenv>=1.1.0
+requests>=2.32.0

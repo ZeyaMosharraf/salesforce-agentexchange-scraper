@@ -2,6 +2,15 @@
 
 An automated data pipeline that extracts, transforms, and enriches Salesforce AppExchange partner information into a comprehensive, structured dataset by combining Salesforce API responses with partner listing page data. The resulting dataset can support sales prospecting, partner discovery, market research, business intelligence, and other data-driven applications.
 
+---
+
+## 📖 Additional Documentation
+For in-depth details about design patterns, code design, and output schemas, please refer to:
+- 🏗 **[System Architecture](file:///g:/My Drive/Data Pipeline Code/Data Extraction/salesforce-agentexchange-scraper/docs/architecture.md)** — Architectural design, flow diagrams, and concurrency features.
+- 📊 **[Data Dictionary](file:///g:/My Drive/Data Pipeline Code/Data Extraction/salesforce-agentexchange-scraper/docs/data_dictionary.md)** — Detailed descriptions of the output JSON/CSV fields and flattening logic.
+
+---
+
 ## Overview
 
 Salesforce AppExchange hosts thousands of consulting partners, independent software vendors (ISVs), and implementation partners across different industries and regions. While partner information is publicly available, it is distributed across Salesforce API responses and individual partner listing pages, making large-scale data collection difficult.
@@ -23,7 +32,6 @@ To address this problem, this project was designed as a unified data pipeline th
 The primary objective of this project is to build a maintainable and production-oriented data pipeline for Salesforce AppExchange partner data by automating the complete data collection workflow.
 
 The pipeline is designed to:
-
 - Extract partner records from the Salesforce AppExchange API.
 - Handle dynamic pagination to retrieve all available partner records.
 - Transform nested API responses into structured business objects.
@@ -37,15 +45,11 @@ The pipeline is designed to:
 Building this pipeline involved significantly more than sending a simple API request. One of the biggest challenges was understanding how Salesforce AppExchange communicates with its backend services, as there is no publicly documented API available for this use case.
 
 During development, several technical challenges had to be investigated and solved:
-
-- Reverse engineered the Salesforce AppExchange network requests using browser developer tools to identify the correct API endpoint and request payload.
-- Analyzed complex nested API responses where the primary payload was returned as a serialized JSON string (`returnValue`) that required additional parsing before processing.
-- Investigated undocumented request parameters and payload structure through experimentation and repeated testing.
-- Designed a dynamic extraction strategy after discovering that traditional offset-based pagination was not reliable for retrieving the complete dataset.
-- Identified the practical API response behavior, including the maximum number of partners returned per request and appropriate stopping conditions instead of relying on hardcoded pagination limits.
-- Built retry mechanisms and error handling to improve stability against temporary network failures and server-side errors.
-- Designed a modular extraction architecture to separate API communication, transformation, logging, and data export into independent components.
-- Combined structured API data with additional information extracted from partner listing pages to produce a unified dataset.
+- **Reverse Engineered API**: Reverse engineered the Salesforce AppExchange network requests using browser developer tools to identify the correct API endpoint and request payload.
+- **Nested JSON Deserialization**: Analyzed complex nested API responses where the primary payload was returned as a serialized JSON string (`returnValue`) that required additional parsing before processing.
+- **Dynamic Pagination Strategy**: Designed a dynamic extraction strategy after discovering that traditional offset-based pagination was not reliable for retrieving the complete dataset.
+- **Connection Pools & Retries**: Built retry mechanisms and error handling to improve stability against temporary network failures and server-side errors.
+- **Concurrency**: Handled the extraction of hundreds of listing pages concurrently using a thread pool to avoid bottlenecking.
 
 ## Solution Architecture
 
@@ -53,233 +57,136 @@ The project follows a modular Extract → Transform → Enrich → Export workfl
 
 ```text
                   Salesforce AppExchange
-                            │
-                            ▼
+                             │
+                             ▼
                   Salesforce Partner API
-                            │
-                            ▼
-                  Extraction Service
-                            │
-                            ▼
-                  Raw API Response (JSON)
-                            │
-                            ▼
-                  Transformation Service
-                            │
-        ┌───────────────────┴───────────────────┐
-        │                                       │
-        ▼                                       ▼
- Parse & Flatten API Data             Download Partner Pages
-        │                                       │
-        └───────────────────┬───────────────────┘
-                            ▼
-                 HTML Data Extraction
-                            │
-                            ▼
-                  Data Enrichment & Merge
-                            │
-                            ▼
-                 Structured Partner Dataset
-                            │
-                            ▼
-                    Export Service
-                ┌───────────┼────────────┬────────────┐
-                ▼           ▼            ▼            ▼
-              JSON         CSV         Excel      Database*
-                                                      │
-                                                      ▼
-                                          ┌───────────┼────────────────────────┐
-                                        Sales │ CRM │ Analytics │ Market Research
+                             │
+                             ▼
+                   Extraction Service
+                             │
+                             ▼
+                   Raw API Response (JSON)
+                             │
+                             ▼
+                   Transformation Service
+                             │
+         ┌───────────────────┴───────────────────┐
+         │                                       │
+         ▼                                       ▼
+  Parse & Flatten API Data             Download Partner Pages
+         │                                       │
+         └───────────────────┬───────────────────┘
+                             ▼
+                  HTML Data Extraction
+                             │
+                             ▼
+                   Data Enrichment & Merge
+                             │
+                             ▼
+                  Structured Partner Dataset
+                             │
+                             ▼
+                     Export Service
+                 ┌───────────┴───────────┐
+                 ▼                       ▼
+               JSON                     CSV
+                                         │
+                                         ▼
+                             ┌───────────┼────────────────────────┐
+                           Sales │ CRM │ Analytics │ Market Research
 ```
+
+---
 
 ## Core Features
 
-### 🔍 Reverse Engineered API Integration
-
-- Identified and analyzed the internal Salesforce AppExchange API through browser network inspection.
-- Reconstructed request payloads and response structures without relying on public documentation.
-- Implemented a reusable API client with configurable request handling.
-
----
-
-### 📥 Automated Data Extraction
-
-- Dynamically extracts Salesforce AppExchange partner records.
-- Supports automatic pagination until all available partner records are collected.
-- Handles nested API responses and complex payload structures.
+- **🔍 Reverse Engineered API Integration**: Identified and analyzed the internal Salesforce AppExchange API through browser network inspection.
+- **📥 Automated Data Extraction**: Dynamically extracts Salesforce AppExchange partner records, supporting automatic pagination.
+- **🌐 HTML Data Enrichment**: Visits each partner listing page automatically, extracting additional business information.
+- **🔄 Data Transformation**: Parses serialized API responses and flattens nested JSON objects into structured records.
+- **🏗 Modular Architecture**: Clear separation of Clients, Services, Models, Configuration, and Utilities.
+- **📝 Centralized Logging**: Structured logging across extraction and processing stages.
+- **🔁 Fault Tolerant Requests**: Automatic retry mechanism for transient HTTP failures with configurable timeouts.
+- **📤 Flexible Export**: Supports exporting processed data into JSON and CSV formats.
 
 ---
-
-### 🌐 HTML Data Enrichment
-
-- Visits each partner listing page automatically.
-- Extracts additional business information unavailable through the API.
-- Combines structured API data with HTML-derived attributes into a unified partner profile.
-
----
-
-### 🔄 Data Transformation
-
-- Parses serialized API responses.
-- Flattens nested JSON objects into structured records.
-- Normalizes inconsistent values and prepares analytics-ready datasets.
-
----
-
-### 🏗 Modular Architecture
-
-- Clear separation of Clients, Services, Models, Configuration, and Utilities.
-- Each component follows a single responsibility, making the project easier to maintain and extend.
-
----
-
-### 📝 Centralized Logging
-
-- Structured logging across extraction and processing stages.
-- Records API requests, execution progress, warnings, and errors.
-- Simplifies debugging and operational monitoring.
-
----
-
-### 🔁 Fault Tolerant Requests
-
-- Automatic retry mechanism for transient HTTP failures.
-- Configurable request timeout and retry strategy.
-- Improved stability during long-running extraction jobs.
-
----
-
-### 📤 Flexible Export
-
-- Supports exporting processed data into structured formats.
-- Designed for integration with analytics platforms, CRM systems, databases, and reporting workflows.
 
 ## Project Structure
+
+The project has been refactored into a standardized modular architecture:
 
 ```text
 salesforce-app-exchange-partner-pipeline/
 │
+├── docs/
+│   ├── architecture.md           # Deep dive into system architecture and data flows
+│   └── data_dictionary.md        # Reference guide for JSON/CSV schemas
+│
 ├── src/
 │   ├── clients/
-│   │   ├── salesforce_client.py      # Handles communication with the Salesforce API
-│   │   └── html_client.py            # Downloads partner listing pages (Planned)
+│   │   ├── __init__.py           # Package exports for HTTP clients
+│   │   ├── html_client.py        # Client for downloading partner pages
+│   │   └── salesforce_client.py  # Client for calling the Salesforce search API
 │   │
 │   ├── config/
-│   │   └── settings.py               # Centralized application configuration
+│   │   ├── __init__.py           # Package exports for settings
+│   │   └── settings.py           # Application environment configuration
 │   │
 │   ├── models/
-│   │   ├── partner.py                # Partner data model (Planned)
-│   │   └── partner_filter.py         # Builds API payload and search filters
+│   │   ├── __init__.py           # Package exports for data filters
+│   │   └── partner_filter.py     # Models API search criteria and payload builder
+│   │
+│   ├── orchestrator/
+│   │   ├── __init__.py           # Package exports for orchestrator
+│   │   └── pipeline.py           # Main ETL pipeline coordinator
 │   │
 │   ├── services/
-│   │   ├── extraction_service.py     # Extracts raw partner data from the API
-│   │   ├── transformation_service.py # Cleans, transforms, enriches, and merges data
-│   │   └── export_service.py         # Exports processed data into different formats
+│   │   ├── __init__.py           # Package exports for core services
+│   │   ├── export_service.py     # Service for writing JSON and CSV outputs
+│   │   ├── extraction_service.py # Service for paginated API extraction
+│   │   └── transformation_service.py # Service coordinating multi-threaded HTML scrapers
+│   │
+│   ├── transformations/
+│   │   ├── __init__.py           # Package exports for data transformers
+│   │   ├── html_transformation.py # Parses partner listing pages using BeautifulSoup
+│   │   ├── merge_transformation.py # Combines API and scraped HTML dictionaries
+│   │   └── partner_transformation.py # Extracts and flattens API partner records
 │   │
 │   ├── utils/
-│   │   └── logger.py                 # Centralized logging configuration
+│   │   ├── __init__.py           # Package exports for logger
+│   │   └── logger.py             # Setup configurations for application logger
 │   │
-│   └── main.py                       # Application entry point
-│
-├── logs/
-│   └── scraper.log
+│   └── main.py                   # Application entry point
 │
 ├── output/
-│   ├── raw/
-│   ├── processed/
-│   └── final/
+│   ├── partners.csv              # Enriched tabular partner dataset
+│   └── partners.json             # Full nested JSON partner dataset
 │
-├── requirements.txt
-├── README.md
-└── .gitignore
+├── .env                          # Local environment variables
+├── .gitignore                    # Git file exclusion rules
+├── pyproject.toml                # Project configurations & dependency declarations
+├── requirements.txt              # Standard python requirements file
+└── README.md                     # Main project readme
 ```
 
-### Directory Responsibilities
-
-| Directory | Responsibility |
-|-----------|----------------|
-| `clients/` | Handles communication with external systems such as the Salesforce API and partner listing pages. |
-| `config/` | Stores centralized application configuration and runtime settings. |
-| `models/` | Defines data models and request payload structures used throughout the pipeline. |
-| `services/` | Contains the core business logic responsible for extraction, transformation, enrichment, and data export. |
-| `utils/` | Shared utilities such as logging and helper functions. |
-| `logs/` | Stores application log files for monitoring and debugging. |
-| `output/` | Stores raw, processed, and final datasets generated by the pipeline. |
-
-## Pipeline Workflow
-
-The project follows a sequential data pipeline where each stage performs a single responsibility before passing the output to the next stage.
-
-```text
-1. Salesforce API
-        │
-        ▼
-2. Extract Partner Records
-        │
-        ▼
-3. Store Raw API Responses
-        │
-        ▼
-4. Parse & Transform Partner Data
-        │
-        ▼
-5. Download Partner Listing Pages
-        │
-        ▼
-6. Extract Additional HTML Information
-        │
-        ▼
-7. Merge API & HTML Data
-        │
-        ▼
-8. Export Structured Dataset
-```
-
-### Stage 1 — Extraction
-
-Collects partner records from the Salesforce AppExchange API while handling pagination, retries, and request failures.
-
-### Stage 2 — Transformation
-
-Parses nested API responses, extracts the required business attributes, and prepares partner objects for enrichment.
-
-### Stage 3 — Enrichment
-
-Downloads each partner listing page and extracts additional information that is not available through the API.
-
-### Stage 4 — Export
-
-Exports the enriched partner dataset into reusable formats such as JSON, CSV, or Excel.
-
-## Technology Stack
-
-| Category | Technology |
-|----------|------------|
-| Programming Language | Python 3 |
-| HTTP Client | Requests |
-| HTML Parsing | BeautifulSoup4 |
-| Data Processing | Pandas |
-| Configuration Management | Pydantic Settings |
-| Logging | Python Logging |
-| Data Serialization | JSON, CSV |
-| Version Control | Git & GitHub |
+---
 
 ## Installation
 
-### Clone the Repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/<your-username>/salesforce-app-exchange-partner-pipeline.git
 cd salesforce-app-exchange-partner-pipeline
 ```
 
-### Create a Virtual Environment
+### 2. Create a Virtual Environment
 
 ```bash
 python -m venv .venv
 ```
 
-### Activate the Virtual Environment
+### 3. Activate the Virtual Environment
 
 **Windows**
 
@@ -293,8 +200,35 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### Install Dependencies
+### 4. Install Dependencies
+
+You can install dependencies using either the standard requirements file:
 
 ```bash
 pip install -r requirements.txt
 ```
+
+Or directly via `pyproject.toml` (which supports editable installs):
+
+```bash
+pip install -e .
+```
+
+---
+
+## Running the Pipeline
+
+Before running, make sure you copy the environment file example or create a `.env` file containing:
+
+```env
+API_URL=https://findpartners.salesforce.com/webruntime/api/apex/execute?language=en-US&asGuest=true&htmlEncode=false
+REQUEST_TIMEOUT=30
+```
+
+Execute the pipeline from the project root:
+
+```bash
+python -m src.main
+```
+
+Logs will output details of the pagination offsets, concurrent listing scrapes, and final data exports. Outputs will be written directly to `output/partners.json` and `output/partners.csv`.
