@@ -37,6 +37,21 @@ class ExtractionService:
                 if isinstance(return_value, str):
                     return_value = json.loads(return_value)
 
+                # Check for Salesforce error first
+                if not return_value.get("isSuccess", True):
+                    error = return_value.get("error", "")
+
+                    if "Maximum SOQL offset allowed" in error:
+                        logger.warning(
+                            "Reached Salesforce SOQL OFFSET limit (2000 rows). "
+                            f"Last attempted offset: {offset}. "
+                            "Stopping extraction gracefully."
+                        )
+                        break
+
+                    logger.error(error)
+                    raise RuntimeError(error)
+
                 partners = return_value["results"]["partners"]
 
                 if not partners:

@@ -6,11 +6,11 @@ from typing import Optional
 class PartnerFilter:
 
     countries: list[str] = field(
-        default_factory=lambda: ["United States of America"]
+        default_factory=lambda: []
     )
 
     practice_size: list[str] = field(
-        default_factory=lambda: ["21-100"]
+        default_factory=lambda: ["6-20"]
     )
 
     expertises: list[str] = field(
@@ -31,7 +31,7 @@ class PartnerFilter:
 
     offset: int = 0
 
-    limit_size: int = 300
+    limit_size: int = 500
 
     from_finder: bool = False
 
