@@ -34,18 +34,8 @@ dist/
 *.log
 logs/
 
-# Output Data Files (Folder structure preserved via .gitkeep)
-output/*
-!output/.gitkeep
-!output/logs/
-output/logs/*
-!output/logs/.gitkeep
-!output/raw/
-output/raw/*
-!output/raw/.gitkeep
-!output/processed/
-output/processed/*
-!output/processed/.gitkeep
+# Output Data Directory (Auto-created at runtime by Python)
+output/
 
 # OS Files
 .DS_Store

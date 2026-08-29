@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from src.services.export_service import ExportService
 from src.services.extraction_service import ExtractionService
 from src.services.transformation_service import TransformationService
@@ -7,6 +9,10 @@ from src.utils.logger import logger
 class Pipeline:
 
     def __init__(self):
+        # Automatically ensure all output directories exist
+        for directory in ["output/raw", "output/processed", "output/logs"]:
+            Path(directory).mkdir(parents=True, exist_ok=True)
+
         self.extraction_service = ExtractionService()
         self.transformation_service = TransformationService()
         self.export_service = ExportService()
