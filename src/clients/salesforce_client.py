@@ -1,18 +1,16 @@
+from typing import Any
 import requests
 
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from src.clients.base_client import BaseClient
+from src.config import settings
 from src.utils.logger import logger
 
-from src.config import settings
 
-
-class SalesforceClient:
+class SalesforceClient(BaseClient):
+    """Client for querying the Salesforce AppExchange Apex API."""
 
     def __init__(self):
-
-        self.session = self._create_session()
-
+        self.session = self._create_session(allowed_methods=["POST"])
         self.headers = {
             "Content-Type": "application/json",
             "Origin": "https://appexchange.salesforce.com",
@@ -20,42 +18,17 @@ class SalesforceClient:
             "User-Agent": settings.user_agent,
         }
 
-    def _create_session(self) -> requests.Session:
-
-        logger.info("Creating HTTP session")
-
-        session = requests.Session()
-
-        retry = Retry(
-            total=3,
-            backoff_factor=2,
-            status_forcelist=[429, 500, 502, 503, 504,
-            ],
-            allowed_methods=["POST"],
-        )
-
-        adapter = HTTPAdapter(max_retries=retry)
-
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-
-        return session
-
-    def post(self, payload: dict) -> dict:
-
+    def post(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
-
             response = self.session.post(
                 url=settings.api_url,
                 json=payload,
                 headers=self.headers,
                 timeout=settings.request_timeout,
             )
-
             response.raise_for_status()
+            return response.json()
 
-        except  requests.RequestException as e:
-                logger.exception(f"Salesforce API request failed: {e}")
-                raise
-
-        return response.json()
+        except requests.RequestException as e:
+            logger.exception(f"Salesforce API request failed: {e}")
+            raise

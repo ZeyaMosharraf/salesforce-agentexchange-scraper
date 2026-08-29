@@ -1,7 +1,7 @@
 import json
 import re
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from src.config import LANGUAGE_MAP
@@ -82,7 +82,7 @@ class HtmlTransformation:
         return items
 
     # ============================================================
-    # HELPER FUNCTIONS
+    # REUSABLE HELPER FUNCTIONS
     # ============================================================
 
     def _clean(self, text: Any) -> str:
@@ -117,6 +117,33 @@ class HtmlTransformation:
             if found is not None:
                 return found
         return None
+
+    def _extract_names(self, items: Any, key: str = "name", max_len: int = 60) -> list[str]:
+        """Reusable extractor for lists of strings or dicts with a given key."""
+        if not isinstance(items, list):
+            return []
+        result: list[str] = []
+        for item in items:
+            if isinstance(item, str) and item.strip() and len(item.strip()) < max_len:
+                result.append(item.strip())
+            elif isinstance(item, dict) and item.get(key):
+                val = str(item.get(key)).strip()
+                if val and len(val) < max_len:
+                    result.append(val)
+        return list(dict.fromkeys(result))
+
+    def _parse_bullet_text(self, node: Any, max_len: int = 60) -> list[str]:
+        """Reusable extractor for text nodes separated by bullets or commas."""
+        if node is None:
+            return []
+        text = self._safe_text(node)
+        if "•" in text:
+            return [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < max_len]
+        elif "," in text:
+            return [p.strip() for p in text.split(",") if p.strip() and len(p.strip()) < max_len]
+        elif text and len(text) < max_len:
+            return [text]
+        return []
 
     # ============================================================
     # METADATA
@@ -450,7 +477,6 @@ class HtmlTransformation:
                 code_str = str(code).strip()
                 languages.append(LANGUAGE_MAP.get(code_str.lower(), code_str))
 
-        # Check extensions array
         if not languages:
             for ext in listing.get("extensions", []):
                 if isinstance(ext, dict):
@@ -460,32 +486,14 @@ class HtmlTransformation:
                             code_str = str(code).strip()
                             languages.append(LANGUAGE_MAP.get(code_str.lower(), code_str))
 
-        # 2. DOM Selector: data-testid="languages-section" or text containing •
+        # 2. DOM Selector fallback
         if not languages:
             node = (
                 soup.select_one('[data-testid="languages-section"] p')
                 or soup.select_one('.languages-container p')
                 or soup.select_one('[data-testid="supported-languages"]')
             )
-            if node is not None:
-                text = self._safe_text(node)
-                if "•" in text:
-                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 40]
-                    languages.extend(items)
-                elif text:
-                    languages.append(text)
-
-        if not languages:
-            for element in soup.find_all(string=re.compile(r"Supported Languages", re.I)):
-                parent = element.parent
-                if parent is None:
-                    continue
-                container = parent.find_next_sibling() or parent.parent
-                if container is not None:
-                    text = self._safe_text(container)
-                    if "•" in text:
-                        items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 40]
-                        languages.extend(items)
+            languages = self._parse_bullet_text(node, max_len=40)
 
         if not languages:
             languages.append("English")
@@ -526,62 +534,28 @@ class HtmlTransformation:
         countries: list[str] = []
         states: list[str] = []
 
-        # 1. State JSON: consultantLocations.locations
+        # 1. State JSON: consultantLocations
         locs = listing.get("consultantLocations", {})
         if isinstance(locs, dict):
-            # Case A: {"locations": [{"countryCode": "US", "countryName": "United States Of America"}, ...]}
-            for item in locs.get("locations", []):
-                if isinstance(item, dict) and item.get("countryName"):
-                    cname = str(item.get("countryName")).strip()
-                    if cname:
-                        countries.append(cname)
-                elif isinstance(item, str) and item.strip():
-                    countries.append(item.strip())
+            countries.extend(self._extract_names(locs.get("locations"), key="countryName"))
+            countries.extend(self._extract_names(locs.get("countries"), key="name"))
+            states.extend(self._extract_names(locs.get("states"), key="name"))
 
-            # Case B: {"countries": [{"name": "..."}, ...]}
-            for c in locs.get("countries", []):
-                if isinstance(c, str) and c.strip():
-                    countries.append(c.strip())
-                elif isinstance(c, dict) and c.get("name"):
-                    cname = str(c.get("name")).strip()
-                    if cname:
-                        countries.append(cname)
-
-            for s in locs.get("states", []):
-                if isinstance(s, str) and s.strip():
-                    states.append(s.strip())
-                elif isinstance(s, dict) and s.get("name"):
-                    sname = str(s.get("name")).strip()
-                    if sname:
-                        states.append(sname)
-
-        # 2. DOM Selector: data-testid="geographic-focus-countries" / .countries-container
+        # 2. DOM Selector for countries
         if not countries:
             node = (
                 soup.select_one('[data-testid="geographic-focus-countries"]')
                 or soup.select_one('.countries-container p.section-text')
             )
-            if node is not None:
-                text = self._safe_text(node)
-                if "•" in text:
-                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
-                    countries.extend(items)
-                elif text:
-                    countries.append(text)
+            countries = self._parse_bullet_text(node, max_len=60)
 
-        # 3. DOM Selector for states: data-testid="geographic-focus-states" / .states-container
+        # 3. DOM Selector for states
         if not states:
             node = (
                 soup.select_one('[data-testid="geographic-focus-states"]')
                 or soup.select_one('.states-container p.section-text')
             )
-            if node is not None:
-                text = self._safe_text(node)
-                if "•" in text:
-                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
-                    states.extend(items)
-                elif text:
-                    states.append(text)
+            states = self._parse_bullet_text(node, max_len=60)
 
         return {
             "countries": list(dict.fromkeys(countries)),
@@ -597,53 +571,22 @@ class HtmlTransformation:
         soup: BeautifulSoup,
         listing: dict[str, Any],
     ) -> dict[str, list[str]]:
-        industry_competencies: list[str] = []
-        product_competencies: list[str] = []
-
         comp = listing.get("consultantCompetencies", {})
-        if isinstance(comp, dict):
-            for item in comp.get("industryCompetencies", []):
-                if isinstance(item, str) and item.strip():
-                    industry_competencies.append(item.strip())
-                elif isinstance(item, dict) and item.get("name"):
-                    industry_competencies.append(str(item.get("name")).strip())
+        industry = self._extract_names(comp.get("industryCompetencies") if isinstance(comp, dict) else [])
+        product = self._extract_names(comp.get("productCompetencies") if isinstance(comp, dict) else [])
 
-            for item in comp.get("productCompetencies", []):
-                if isinstance(item, str) and item.strip():
-                    product_competencies.append(item.strip())
-                elif isinstance(item, dict) and item.get("name"):
-                    product_competencies.append(str(item.get("name")).strip())
+        # DOM Fallbacks
+        if not industry:
+            node = self._first_existing(soup, ['[data-testid="industry-competencies"]', '.industry-competencies'])
+            industry = self._parse_bullet_text(node, max_len=60)
 
-        # Fallback to DOM parsing if state is empty
-        if not industry_competencies:
-            for element in soup.find_all(string=re.compile(r"Industry Competencies", re.I)):
-                parent = element.parent
-                if parent is None:
-                    continue
-                container = parent.find_next_sibling() or parent.parent
-                if container is not None:
-                    text = self._safe_text(container)
-                    if "•" in text:
-                        industry_competencies.extend(
-                            [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
-                        )
-
-        if not product_competencies:
-            for element in soup.find_all(string=re.compile(r"Product Competencies", re.I)):
-                parent = element.parent
-                if parent is None:
-                    continue
-                container = parent.find_next_sibling() or parent.parent
-                if container is not None:
-                    text = self._safe_text(container)
-                    if "•" in text:
-                        product_competencies.extend(
-                            [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
-                        )
+        if not product:
+            node = self._first_existing(soup, ['[data-testid="product-competencies"]', '.product-competencies'])
+            product = self._parse_bullet_text(node, max_len=60)
 
         return {
-            "industry_competencies": list(dict.fromkeys(industry_competencies)),
-            "product_competencies": list(dict.fromkeys(product_competencies)),
+            "industry_competencies": industry,
+            "product_competencies": product,
         }
 
     # ============================================================
@@ -808,14 +751,8 @@ class HtmlTransformation:
         soup: BeautifulSoup,
         listing: dict[str, Any],
     ) -> list[str]:
-        highlights: list[str] = []
-        competencies = listing.get("consultantCompetencies", {})
-        if isinstance(competencies, dict):
-            for item in competencies.get("items", []):
-                if isinstance(item, str):
-                    highlights.append(item)
-                elif isinstance(item, dict) and item.get("name"):
-                    highlights.append(str(item.get("name")))
+        comp = listing.get("consultantCompetencies", {})
+        highlights = self._extract_names(comp.get("items") if isinstance(comp, dict) else [])
 
         if not highlights and listing.get("fullDescription"):
             lines = str(listing.get("fullDescription", "")).split("\n")

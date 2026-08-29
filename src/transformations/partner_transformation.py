@@ -32,48 +32,27 @@ class PartnerTransformation:
         partners = return_value["results"]["partners"]
         return [self._flatten_partner(partner) for partner in partners]
 
+    def _extract_options(self, items: Any) -> str:
+        """Extract semicolon-separated option names from nested Salesforce relationship items."""
+        if not isinstance(items, list):
+            return ""
+        names = [
+            str(item.get("Filter_Option__r", {}).get("Name", "")).strip()
+            for item in items
+            if isinstance(item, dict) and item.get("Filter_Option__r", {}).get("Name")
+        ]
+        return "; ".join(filter(None, names))
+
     def _flatten_partner(self, record: dict[str, Any]) -> dict[str, Any]:
         p = record.get("partner", {})
-
-        # Query metadata tagged during extraction loop
-        query_country = record.get("_query_country", "")
-        query_practice_size = record.get("_query_practice_size", "")
-
-        # Extract expertises
-        expertises = [
-            item.get("Filter_Option__r", {}).get("Name")
-            for item in record.get("expertises", [])
-            if item.get("Filter_Option__r", {}).get("Name")
-        ]
-
-        # Extract specializations
-        specializations = [
-            item.get("Filter_Option__r", {}).get("Name")
-            for item in record.get("specializations", [])
-            if item.get("Filter_Option__r", {}).get("Name")
-        ]
-
-        # Extract cloud expert awards
-        cloud_experts = [
-            item.get("Filter_Option__r", {}).get("Name")
-            for item in record.get("expertisesCloudExpert", [])
-            if item.get("Filter_Option__r", {}).get("Name")
-        ]
-
-        # Extract cloud accredited awards
-        cloud_accredited = [
-            item.get("Filter_Option__r", {}).get("Name")
-            for item in record.get("expertisesCloudAccredited", [])
-            if item.get("Filter_Option__r", {}).get("Name")
-        ]
 
         return {
             "id": p.get("Id", ""),
             "name": p.get("Name", ""),
-            "country": query_country,
+            "country": record.get("_query_country", ""),
             "countries": "",
             "states": "",
-            "practice_size": query_practice_size,
+            "practice_size": record.get("_query_practice_size", ""),
             "headquarters": p.get("Headquarters__c", ""),
             "website": "",
             "domain": "",
@@ -87,8 +66,8 @@ class PartnerTransformation:
             "partner_score": p.get("PF_Total_Score__c", 0.0),
             "diverse_owned": p.get("PF_Is_Diverse_Owned_Business__c", False),
             "pledge_1_percent": p.get("PF_Is_Pledge_1_Percent__c", False),
-            "expertise": "; ".join(filter(None, expertises)),
-            "specializations": "; ".join(filter(None, specializations)),
-            "cloud_expert_awards": "; ".join(filter(None, cloud_experts)),
-            "cloud_accredited_awards": "; ".join(filter(None, cloud_accredited)),
+            "expertise": self._extract_options(record.get("expertises")),
+            "specializations": self._extract_options(record.get("specializations")),
+            "cloud_expert_awards": self._extract_options(record.get("expertisesCloudExpert")),
+            "cloud_accredited_awards": self._extract_options(record.get("expertisesCloudAccredited")),
         }

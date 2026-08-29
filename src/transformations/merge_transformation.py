@@ -84,23 +84,15 @@ class MergeTransformation:
                         )
                 elif key == "statistics" and isinstance(val, dict):
                     stats = val.copy()
-                    if not stats.get("rating") and api_partner.get("rating") is not None:
-                        stats["rating"] = str(api_partner.get("rating"))
-                    if (
-                        not stats.get("review_count")
-                        and api_partner.get("reviews") is not None
-                    ):
-                        stats["review_count"] = str(api_partner.get("reviews"))
-                    if (
-                        not stats.get("projects_completed")
-                        and api_partner.get("projects") is not None
-                    ):
-                        stats["projects_completed"] = str(api_partner.get("projects"))
-                    if (
-                        not stats.get("certified_experts")
-                        and api_partner.get("credentials") is not None
-                    ):
-                        stats["certified_experts"] = str(api_partner.get("credentials"))
+                    field_map = {
+                        "rating": "rating",
+                        "review_count": "reviews",
+                        "projects_completed": "projects",
+                        "certified_experts": "credentials",
+                    }
+                    for stat_k, api_k in field_map.items():
+                        if not stats.get(stat_k) and api_partner.get(api_k) is not None:
+                            stats[stat_k] = str(api_partner[api_k])
                     merged["statistics"] = stats
                 elif key == "contact" and isinstance(val, dict):
                     contact = val.copy()
