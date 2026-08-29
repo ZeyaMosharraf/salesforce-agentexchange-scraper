@@ -34,10 +34,18 @@ dist/
 *.log
 logs/
 
-# Output Files
-output/logs/
-output/processed/
-output/raw/
+# Output Data Files (Folder structure preserved via .gitkeep)
+output/*
+!output/.gitkeep
+!output/logs/
+output/logs/*
+!output/logs/.gitkeep
+!output/raw/
+output/raw/*
+!output/raw/.gitkeep
+!output/processed/
+output/processed/*
+!output/processed/.gitkeep
 
 # OS Files
 .DS_Store
