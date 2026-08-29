@@ -37,3 +37,7 @@ select = [
 pythonpath = [
     "."
 ]
+
+[tool.pyright]
+extraPaths = ["."]
+include = ["src", "tests"]

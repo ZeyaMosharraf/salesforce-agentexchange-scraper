@@ -1,915 +1,681 @@
+import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from bs4 import BeautifulSoup
 from src.utils.logger import logger
 
+
 class HtmlTransformation:
+    """
+    Transforms raw HTML from Salesforce AppExchange listing pages into structured partner data.
+
+    Uses a multi-layered extraction strategy:
+    1. Primary: Extracts embedded `window.stores` state JSON containing full partner listing,
+       publisher details, ratings, reviews, employees, and media plugins.
+    2. Secondary: Extracts Schema.org JSON-LD structured metadata.
+    3. Tertiary: Fallback to BeautifulSoup DOM selector parsing for static HTML tags.
+    """
 
     def transform(self, html: str) -> dict[str, Any]:
-
         try:
+            soup = BeautifulSoup(html, "lxml")
+            stores = self._extract_stores(soup)
+            listing = stores.get("LISTING", {}).get("listing", {})
+            publisher = listing.get("publisher", {})
+            ld_json = self._extract_ld_json(soup)
 
-                soup = BeautifulSoup(html, "lxml")
+            return {
+                "metadata": self._parse_metadata(soup, listing, ld_json),
+                "company": self._parse_company(soup, listing, publisher),
+                "statistics": self._parse_statistics(soup, listing, publisher),
+                "resources": self._parse_resources(soup, listing),
+                "reviews": self._parse_reviews(soup, listing),
+                "links": self._parse_links(soup, publisher),
+                "languages": self._parse_languages(soup, listing),
+                "user_action": self._parse_user_actions(soup, listing),
+                "geographic": self._parse_geographic_focus(listing, publisher),
+                "contact": self._parse_contact(soup, publisher),
+                "about": self._parse_about(soup, publisher),
+                "description": self._parse_description(soup, listing, publisher),
+                "highlight": self._parse_highlights(soup, listing),
+                "overview": self._parse_overview(soup, listing, publisher),
+            }
 
-                result = {
-                    "metadata": self._parse_metadata(soup),
-                    "company": self._parse_company(soup),
-                    "statistics": self._parse_statistics(soup),
-                    "resources": self._parse_resources(soup),
-                    "reviews": self._parse_reviews(soup),
-                    "links": self._parse_links(soup),
-                    "languages": self._parse_languages(soup),
-                    "user_action": self._parse_user_actions(soup),
-                    "geographic": self._parse_geographic_focus(soup),
-                    "contact": self._parse_contact(soup),
-                    "about": self._parse_about(soup),
-                    "description" : self._parse_description(soup),
-                    "highlight" : self._parse_highlights(soup),
-                    "overview" : self._parse_overview(soup),
-                }
-
-                return result
-
-        except Exception as e:
-
-            logger.exception(
-                "HTML transformation failed"
-            )
-
+        except Exception:
+            logger.exception("HTML transformation failed")
             raise
-    
+
+    # ============================================================
+    # STORE & JSON-LD EXTRACTION
+    # ============================================================
+
+    def _extract_stores(self, soup: BeautifulSoup) -> dict[str, Any]:
+        """Extracts the embedded window.stores JSON state from page scripts."""
+        for script in soup.find_all("script"):
+            content = script.string or script.get_text() or ""
+            if "window.stores=" in content:
+                idx = content.find("window.stores=") + len("window.stores=")
+                try:
+                    stores, _ = json.JSONDecoder().raw_decode(content[idx:])
+                    if isinstance(stores, dict):
+                        return stores
+                except Exception:
+                    pass
+        return {}
+
+    def _extract_ld_json(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
+        """Extracts JSON-LD structured data elements from script tags."""
+        items: list[dict[str, Any]] = []
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(script.string or script.get_text() or "")
+                if isinstance(data, list):
+                    items.extend(data)
+                elif isinstance(data, dict):
+                    items.append(data)
+            except Exception:
+                pass
+        return items
+
     # ============================================================
     # HELPER FUNCTIONS
     # ============================================================
 
-    def _clean(self, text: Optional[str]) -> str:
-        """Clean extracted text."""
-        if not text:
+    def _clean(self, text: Any) -> str:
+        """Clean extracted text from any input type safely."""
+        if text is None:
             return ""
-        return re.sub(r"\s+", " ", text).strip()
+        if isinstance(text, (list, tuple)):
+            text = " ".join(str(t) for t in text)
+        return re.sub(r"\s+", " ", str(text)).strip()
 
-
-    def _safe_text(self, element) -> str:
-        """Safely return cleaned text."""
-        if element:
+    def _safe_text(self, element: Any) -> str:
+        """Safely return cleaned text from a Tag or string."""
+        if element is None:
+            return ""
+        if hasattr(element, "get_text"):
             return self._clean(element.get_text(" ", strip=True))
-        return ""
+        return self._clean(element)
 
+    def _safe_attr(self, element: Any, attr: str) -> str:
+        """Safely return attribute value from a Tag."""
+        if element is None:
+            return ""
+        val = element.get(attr, "")
+        return self._clean(val)
 
-    def _safe_attr(self,element, attr: str) -> str:
-        """Safely return attribute."""
-        if element and element.has_attr(attr):
-            return self._clean(element[attr])
-        return ""
-
-
-    def _first_existing(self, soup, selectors: List[str]):
-        """Return first matching selector."""
+    def _first_existing(self, node: Any, selectors: list[str]) -> Any:
+        """Return first matching selector from a BeautifulSoup or Tag node."""
+        if node is None:
+            return None
         for selector in selectors:
-            node = soup.select_one(selector)
-            if node:
-                return node
+            found = node.select_one(selector)
+            if found is not None:
+                return found
         return None
-
 
     # ============================================================
     # METADATA
     # ============================================================
 
-    def _parse_metadata(self, soup) -> Dict[str, Any]:
-
-        logger.debug("Parsing metadata...")
-
-        metadata = {}
-
-        metadata["title"] = self._safe_text(
-            soup.find("title")
-        )
-
-        metadata["canonical"] = self._safe_attr(
-            soup.select_one("link[rel='canonical']"),
-            "href"
-        )
-
-        metadata["description"] = self._safe_attr(
-            soup.select_one("meta[name='description']"),
-            "content"
-        )
-
-        metadata["keywords"] = self._safe_attr(
-            soup.select_one("meta[name='keywords']"),
-            "content"
-        )
-
-        metadata["robots"] = self._safe_attr(
-            soup.select_one("meta[name='robots']"),
-            "content"
-        )
-
-        metadata["language"] = self._safe_attr(
-            soup.select_one("html"),
-            "lang"
-        )
-
-        metadata["og"] = {}
+    def _parse_metadata(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+        ld_json: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "title": self._safe_text(soup.find("title"))
+            or str(listing.get("seoTitle") or listing.get("name") or ""),
+            "canonical": self._safe_attr(
+                soup.select_one("link[rel='canonical']"), "href"
+            ),
+            "description": self._safe_attr(
+                soup.select_one("meta[name='description']"), "content"
+            )
+            or str(listing.get("description") or ""),
+            "keywords": self._safe_attr(
+                soup.select_one("meta[name='keywords']"), "content"
+            ),
+            "robots": self._safe_attr(
+                soup.select_one("meta[name='robots']"), "content"
+            ),
+            "language": self._safe_attr(soup.select_one("html"), "lang") or "en",
+            "og": {},
+            "twitter": {},
+        }
 
         for meta in soup.select("meta[property^='og:']"):
-
-            key = meta.get("property", "").replace("og:", "")
-
-            metadata["og"][key] = self._clean(
-                meta.get("content", "")
-            )
-
-        metadata["twitter"] = {}
+            raw_prop = meta.get("property")
+            if raw_prop:
+                prop_str = str(raw_prop[0] if isinstance(raw_prop, list) else raw_prop)
+                key = prop_str.replace("og:", "")
+                metadata["og"][key] = self._clean(meta.get("content"))
 
         for meta in soup.select("meta[name^='twitter:']"):
-
-            key = meta.get("name", "").replace("twitter:", "")
-
-            metadata["twitter"][key] = self._clean(
-                meta.get("content", "")
-            )
+            raw_name = meta.get("name")
+            if raw_name:
+                name_str = str(raw_name[0] if isinstance(raw_name, list) else raw_name)
+                key = name_str.replace("twitter:", "")
+                metadata["twitter"][key] = self._clean(meta.get("content"))
 
         return metadata
-
 
     # ============================================================
     # COMPANY INFORMATION
     # ============================================================
 
-    def _parse_company(self, soup) -> Dict[str, Any]:
-
-        logger.debug("Parsing company information...")
-
-        data = {}
-
-        title = self._first_existing(
-            soup,
-            [
-                "h1",
-                ".appx-listing-title",
-                ".listing-title",
-                ".appx-title"
-            ]
+    def _parse_company(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        name = (
+            str(publisher.get("name") or "")
+            or str(listing.get("name") or "")
+            or self._safe_text(
+                self._first_existing(
+                    soup,
+                    ["h1", ".appx-listing-title", ".listing-title", ".appx-title"],
+                )
+            )
         )
 
-        data["company_name"] = self._safe_text(title)
-
-        logo = self._first_existing(
-            soup,
-            [
-                ".appx-logo img",
-                ".listing-logo img",
-                ".partner-logo img",
-                "img.appx-logo"
-            ]
-        )
-
-        data["logo"] = self._safe_attr(
-            logo,
-            "src"
-        )
-
-        banner = self._first_existing(
-            soup,
-            [
-                ".hero img",
-                ".banner img",
-                ".overview img"
-            ]
-        )
-
-        data["banner"] = self._safe_attr(
-            banner,
-            "src"
-        )
-
-        data["tagline"] = ""
-
-        overview = soup.select_one(
-            ".appx-multi-line-fixed"
-        )
-
-        if overview:
-
-            text = self._safe_text(
-                overview
+        # Logo extraction
+        logo = ""
+        pub_logo = publisher.get("publisher/plugins/PublisherLogo", {})
+        if isinstance(pub_logo, dict) and pub_logo.get("Logo"):
+            logo = str(pub_logo.get("Logo"))
+        elif isinstance(pub_logo, dict) and pub_logo.get("items"):
+            items = pub_logo.get("items", [])
+            if items and isinstance(items[0], dict):
+                logo = str(items[0].get("mediaId", ""))
+        if not logo:
+            logo = self._safe_attr(
+                self._first_existing(
+                    soup,
+                    [
+                        ".appx-logo img",
+                        ".listing-logo img",
+                        ".partner-logo img",
+                        "img.appx-logo",
+                    ],
+                ),
+                "src",
+            )
+        if not logo:
+            logo = self._safe_attr(
+                soup.select_one("meta[property='og:image']"), "content"
             )
 
-            sentences = re.split(
-                r"(?<=[.!?])\s+",
-                text
+        # Banner extraction
+        banner = ""
+        carousel = listing.get("listing/plugins/Carousel", {})
+        if isinstance(carousel, dict) and carousel.get("items"):
+            items = carousel.get("items", [])
+            if items and isinstance(items[0], dict):
+                banner = str(items[0].get("data", {}).get("url", ""))
+        if not banner:
+            banner = self._safe_attr(
+                self._first_existing(soup, [".hero img", ".banner img", ".overview img"]),
+                "src",
             )
 
-            if sentences:
+        # Tagline extraction
+        tagline = str(listing.get("tagline") or "")
+        if not tagline and listing.get("description"):
+            tagline = str(listing.get("description"))
+        elif not tagline and publisher.get("description"):
+            desc = str(publisher.get("description", ""))
+            first_line = desc.split("\n")[0].strip()
+            tagline = first_line[:150]
+        if not tagline:
+            overview_node = soup.select_one(".appx-multi-line-fixed")
+            if overview_node is not None:
+                tagline = self._safe_text(overview_node).split(".")[0]
 
-                data["tagline"] = sentences[0]
-
-        return data
-
+        return {
+            "company_name": self._clean(name),
+            "logo": self._clean(logo),
+            "banner": self._clean(banner),
+            "tagline": self._clean(tagline),
+        }
 
     # ============================================================
     # STATISTICS
     # ============================================================
 
-    def _parse_statistics(self, soup) -> Dict[str, Any]:
-
-        logger.debug(
-            "Parsing statistics..."
+    def _parse_statistics(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        reviews_summary = listing.get("reviewsSummary", {})
+        consultant_ext = listing.get(
+            "listing/extensions/consultant/listings/Listing", {}
         )
 
-        stats = {
-            "rating": "",
-            "review_count": "",
-            "projects_completed": "",
-            "certified_experts": "",
-            "founded": "",
-            "employees": ""
+        rating = ""
+        review_count = ""
+        if isinstance(reviews_summary, dict) and reviews_summary.get("averageRating") is not None:
+            rating = str(reviews_summary.get("averageRating"))
+        elif listing.get("rating") is not None:
+            rating = str(listing.get("rating"))
+
+        if isinstance(reviews_summary, dict) and reviews_summary.get("reviewCount") is not None:
+            review_count = str(reviews_summary.get("reviewCount"))
+        elif listing.get("reviewCount") is not None:
+            review_count = str(listing.get("reviewCount"))
+
+        projects_completed = str(consultant_ext.get("projectsCompleted", "") or "") if isinstance(consultant_ext, dict) else ""
+        certified_experts = str(consultant_ext.get("certifiedExperts", "") or "") if isinstance(consultant_ext, dict) else ""
+        founded = str(publisher.get("yearFounded", "") or "")
+        employees = str(publisher.get("employees", "") or "")
+
+        # Fallback to text searching if empty
+        if not (rating or review_count or projects_completed or certified_experts or founded or employees):
+            text = soup.get_text(" ", strip=True)
+            r_match = re.search(r"([0-5]\.\d+)", text)
+            if r_match:
+                rating = r_match.group(1)
+            rev_match = re.search(r"(\d+)\s+Reviews?", text, re.I)
+            if rev_match:
+                review_count = rev_match.group(1)
+            proj_match = re.search(r"(\d+)\s+Projects", text, re.I)
+            if proj_match:
+                projects_completed = proj_match.group(1)
+            exp_match = re.search(r"(\d+)\s+Certified", text, re.I)
+            if exp_match:
+                certified_experts = exp_match.group(1)
+            f_match = re.search(r"Founded\s*(\d{4})", text, re.I)
+            if f_match:
+                founded = f_match.group(1)
+
+        return {
+            "rating": rating,
+            "review_count": review_count,
+            "projects_completed": projects_completed,
+            "certified_experts": certified_experts,
+            "founded": founded,
+            "employees": employees,
         }
-
-        text = soup.get_text(
-            " ",
-            strip=True
-        )
-
-        rating = re.search(
-            r"([0-5]\.\d+)",
-            text
-        )
-
-        if rating:
-            stats["rating"] = rating.group(1)
-
-        review = re.search(
-            r"(\d+)\s+Reviews?",
-            text,
-            re.I
-        )
-
-        if review:
-            stats["review_count"] = review.group(1)
-
-        project = re.search(
-            r"(\d+)\s+Projects",
-            text,
-            re.I
-        )
-
-        if project:
-            stats["projects_completed"] = project.group(1)
-
-        expert = re.search(
-            r"(\d+)\s+Certified",
-            text,
-            re.I
-        )
-
-        if expert:
-            stats["certified_experts"] = expert.group(1)
-
-        founded = re.search(
-            r"Founded\s*(\d{4})",
-            text,
-            re.I
-        )
-
-        if founded:
-            stats["founded"] = founded.group(1)
-
-        return stats
-
-
-    # ============================================================
-    # OVERVIEW
-    # ============================================================
-
-    def _parse_overview(self, soup) -> Dict[str, Any]:
-
-        logger.debug(
-            "Parsing overview..."
-        )
-
-        overview = {}
-
-        title = soup.select_one(
-            ".appx-overview-title"
-        )
-
-        overview["title"] = self._safe_text(
-            title
-        )
-
-        desc = soup.select_one(
-            ".appx-multi-line-fixed"
-        )
-
-        overview["description"] = self._safe_text(
-            desc
-        )
-
-        return overview
-
-
-    # ============================================================
-    # HIGHLIGHTS
-    # ============================================================
-
-    def _parse_highlights(self, soup) -> List[Dict[str, List[str]]]:
-
-        logger.debug(
-            "Parsing highlights..."
-        )
-
-        highlights = []
-
-        for item in soup.select(
-            "li"
-        ):
-
-            text = self._safe_text(item)
-
-            if (
-                len(text) > 15
-                and len(text) < 250
-            ):
-                highlights.append(text)
-
-        return list(dict.fromkeys(highlights))
-
-    # ============================================================
-    # DESCRIPTION
-    # ============================================================
-
-    def _parse_description(self, soup) -> List[str]:
-
-        logger.debug(
-            "Parsing description..."
-        )
-
-        paragraphs = []
-
-        selectors = [
-
-            ".appx-multi-line-fixed",
-
-            ".appx-description",
-
-            ".appx-description p",
-
-            ".slds-rich-text-editor__output p",
-
-            ".slds-rich-text-editor__output",
-
-        ]
-
-        visited = set()
-
-        for selector in selectors:
-
-            for item in soup.select(selector):
-
-                text = self._safe_text(item)
-
-                if (
-                    text
-                    and text not in visited
-                    and len(text) > 40
-                ):
-
-                    visited.add(text)
-
-                    paragraphs.append(text)
-
-        return paragraphs
-
-
-    # ============================================================
-    # ABOUT SECTION
-    # ============================================================
-
-    def _parse_about(self, soup) -> Dict[str, Any]:
-
-        logger.debug(
-            "Parsing about section..."
-        )
-
-        about = {}
-
-        labels = soup.select(
-            ".appx-extended-detail-subsection-label"
-        )
-
-        for label in labels:
-
-            key = self._safe_text(label)
-
-            value = label.find_next_sibling(
-                "div"
-            )
-
-            if not value:
-
-                continue
-
-            link = value.find("a")
-
-            if link:
-
-                href = link.get("href")
-
-                if href:
-
-                    about[key] = self._clean(href)
-
-                else:
-
-                    about[key] = self._safe_text(link)
-
-            else:
-
-                about[key] = self._safe_text(value)
-
-        return about
-
-
-    # ============================================================
-    # CONTACT
-    # ============================================================
-
-    def _parse_contact(self, soup) -> Dict[str, Any]:
-
-        logger.debug(
-            "Parsing contact..."
-        )
-
-        contact = {
-
-            "website": "",
-
-            "email": "",
-
-            "phone": "",
-
-            "headquarters": "",
-
-        }
-
-        labels = soup.select(
-            ".appx-extended-detail-subsection-label"
-        )
-
-        for label in labels:
-
-            key = self._safe_text(label).lower()
-
-            value = label.find_next_sibling(
-                "div"
-            )
-
-            if not value:
-
-                continue
-
-            text = self._safe_text(value)
-
-            href = ""
-
-            link = value.find("a")
-
-            if link:
-
-                href = link.get(
-                    "href",
-                    ""
-                )
-
-            if "website" in key:
-
-                contact["website"] = href or text
-
-            elif "email" in key:
-
-                contact["email"] = (
-                    href.replace(
-                        "mailto:",
-                        ""
-                    )
-                    if href
-                    else text
-                )
-
-            elif "phone" in key:
-
-                contact["phone"] = text
-
-            elif "headquarters" in key:
-
-                contact["headquarters"] = text
-
-        return contact
-
-
-    # ============================================================
-    # LANGUAGES
-    # ============================================================
-
-    def _parse_languages(self, soup) -> List[str]:
-
-        logger.debug(
-            "Parsing languages..."
-        )
-
-        languages = []
-
-        for element in soup.find_all(
-            string=re.compile(
-                "Languages",
-                re.I
-            )
-        ):
-
-            parent = element.parent
-
-            if not parent:
-
-                continue
-
-            block = parent.find_next()
-
-            if not block:
-
-                continue
-
-            for item in block.find_all(
-                [
-                    "li",
-                    "span",
-                    "div"
-                ]
-            ):
-
-                text = self._safe_text(item)
-
-                if (
-                    text
-                    and len(text) < 40
-                ):
-
-                    languages.append(
-                        text
-                    )
-
-        languages = list(
-            dict.fromkeys(
-                languages
-            )
-        )
-
-        return languages
-
-
-    # ============================================================
-    # GEOGRAPHIC FOCUS
-    # ============================================================
-
-    def _parse_geographic_focus(self, soup) -> Dict[str, Any]:
-
-        logger.debug(
-            "Parsing geography..."
-        )
-
-        geo = {
-
-            "countries": [],
-
-            "states": [],
-
-        }
-
-        text = soup.get_text(
-            " ",
-            strip=True
-        )
-
-        country_patterns = [
-
-            "United States",
-
-            "Canada",
-
-            "India",
-
-            "Australia",
-
-            "United Kingdom",
-
-        ]
-
-        for country in country_patterns:
-
-            if country in text:
-
-                geo[
-                    "countries"
-                ].append(
-                    country
-                )
-
-        for div in soup.select(
-            ".appx-country, .country"
-        ):
-
-            value = self._safe_text(div)
-
-            if value:
-
-                geo[
-                    "countries"
-                ].append(
-                    value
-                )
-
-        for div in soup.select(
-            ".appx-state, .state"
-        ):
-
-            value = self._safe_text(div)
-
-            if value:
-
-                geo[
-                    "states"
-                ].append(
-                    value
-                )
-
-        geo["countries"] = list(
-            dict.fromkeys(
-                geo["countries"]
-            )
-        )
-
-        geo["states"] = list(
-            dict.fromkeys(
-                geo["states"]
-            )
-        )
-
-        return geo
-
 
     # ============================================================
     # RESOURCES
     # ============================================================
 
-    def _parse_resources(self, soup) -> List[Dict[str, Any]]:
+    def _parse_resources(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        resources: list[dict[str, Any]] = []
 
-        logger.debug(
-            "Parsing resources..."
-        )
+        content_plugin = listing.get("listing/plugins/Content", {})
+        if isinstance(content_plugin, dict) and content_plugin.get("items"):
+            for item in content_plugin.get("items", []):
+                if isinstance(item, dict):
+                    idata = item.get("data", {})
+                    if isinstance(idata, dict) and idata.get("url"):
+                        resources.append({
+                            "title": self._clean(idata.get("title", "")),
+                            "url": str(idata.get("url", "")),
+                            "type": str(idata.get("type", "Resource")),
+                        })
 
-        resources = []
-
-        for link in soup.find_all(
-            "a",
-            href=True
-        ):
-
-            href = self._clean(
-                link["href"]
-            )
-
-            title = self._safe_text(
-                link
-            )
-
-            if not href:
-
-                continue
-
-            if any(
-                x in href.lower()
-                for x in [
-
-                    ".pdf",
-
-                    "resource",
-
-                    "guide",
-
-                    "ebook",
-
-                    "datasheet",
-
-                    "whitepaper",
-
-                    "case",
-
-                ]
+        for link in soup.find_all("a", href=True):
+            href = self._clean(link.get("href"))
+            title = self._safe_text(link)
+            if href and any(
+                ext in href.lower()
+                for ext in [".pdf", "whitepaper", "datasheet", "case-study", "guide", "ebook"]
             ):
+                if not any(r["url"] == href for r in resources):
+                    resources.append({
+                        "title": title or "Document Resource",
+                        "url": href,
+                        "type": "Document",
+                    })
 
-                resources.append({
-
-                    "title": title,
-
-                    "url": href,
-
-                })
-
-        return  resources
-
+        return resources
 
     # ============================================================
     # REVIEWS
     # ============================================================
 
-    def _parse_reviews(self, soup) -> List[Dict[str, Any]]:
+    def _parse_reviews(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        reviews: list[dict[str, Any]] = []
+        reviews_summary = listing.get("reviewsSummary", {})
+        if isinstance(reviews_summary, dict) and reviews_summary:
+            reviews.append({
+                "rating": str(reviews_summary.get("averageRating", "")),
+                "review_count": str(reviews_summary.get("reviewCount", "")),
+                "id": str(reviews_summary.get("id", "")),
+            })
 
-        logger.debug(
-            "Parsing reviews..."
-        )
-
-        reviews = []
-
-        review_blocks = soup.select(
-            ".review, .appx-review, .review-item"
-        )
-
-        for block in review_blocks:
-
+        for block in soup.select(".review, .appx-review, .review-item"):
             review = {
-
-                "reviewer": "",
-
-                "rating": "",
-
-                "date": "",
-
-                "review": "",
-
+                "reviewer": self._safe_text(
+                    self._first_existing(
+                        block, [".reviewer", ".author", ".review-author", ".name"]
+                    )
+                ),
+                "rating": self._safe_text(
+                    self._first_existing(
+                        block, [".rating", ".stars", ".review-rating"]
+                    )
+                ),
+                "date": self._safe_text(
+                    self._first_existing(block, [".date", ".review-date"])
+                ),
+                "review": self._safe_text(
+                    self._first_existing(
+                        block, [".content", ".review-text", ".review-body"]
+                    )
+                ),
             }
-
-            review["reviewer"] = self._safe_text(
-                self._first_existing(
-                    block,
-                    [
-                        ".reviewer",
-
-                        ".author",
-
-                        ".review-author",
-
-                        ".name",
-                    ]
-                )
-            )
-
-            review["rating"] = self._safe_text(
-                self._first_existing(
-                    block,
-                    [
-                        ".rating",
-
-                        ".stars",
-
-                        ".review-rating",
-                    ]
-                )
-            )
-
-            review["date"] = self._safe_text(
-                self._first_existing(
-                    block,
-                    [
-                        ".date",
-
-                        ".review-date",
-                    ]
-                )
-            )
-
-            review["review"] = self._safe_text(
-                self._first_existing(
-                    block,
-                    [
-                        ".content",
-
-                        ".review-text",
-
-                        ".review-body",
-                    ]
-                )
-            )
-
             if any(review.values()):
-
                 reviews.append(review)
 
         return reviews
 
     # ============================================================
-    # APPX USER ACTIONS
-    # ============================================================
-
-    def _parse_user_actions(self, soup) -> Dict[str, Any]:
-
-        logger.debug("Parsing AppxUserActions...")
-
-        data = {
-            "learn_more_url": ""
-        }
-
-        for script in soup.find_all("script"):
-
-            script_text = script.get_text()
-
-            if "learnMoreUrl" not in script_text:
-                continue
-
-            match = re.search(
-                r"learnMoreUrl\s*:\s*['\"]([^'\"]+)['\"]",
-                script_text
-            )
-
-            if match:
-                data["learn_more_url"] = match.group(1)
-                break
-
-        return data
-
-    # ============================================================
     # LINKS
     # ============================================================
 
-    def _parse_links(self, soup) -> Dict[str, Any]:
+    def _parse_links(
+        self,
+        soup: BeautifulSoup,
+        publisher: dict[str, Any],
+    ) -> dict[str, list[str]]:
+        internal: list[str] = []
+        external: list[str] = []
+        mailto: list[str] = []
+        telephone: list[str] = []
 
-        logger.debug(
-            "Parsing links..."
-        )
+        if publisher.get("website"):
+            external.append(str(publisher.get("website")))
+        if publisher.get("email"):
+            mailto.append(str(publisher.get("email")))
+        if publisher.get("phone"):
+            telephone.append(str(publisher.get("phone")))
 
-        links = {
+        for a in soup.find_all("a", href=True):
+            href = self._clean(a.get("href"))
+            if not href:
+                continue
+            if href.startswith("mailto:"):
+                mailto.append(href.replace("mailto:", ""))
+            elif href.startswith("tel:"):
+                telephone.append(href.replace("tel:", ""))
+            elif href.startswith("http"):
+                external.append(href)
+            else:
+                internal.append(href)
 
-            "internal": [],
-
-            "external": [],
-
-            "mailto": [],
-
-            "telephone": [],
-
+        return {
+            "internal": list(dict.fromkeys(internal)),
+            "external": list(dict.fromkeys(external)),
+            "mailto": list(dict.fromkeys(mailto)),
+            "telephone": list(dict.fromkeys(telephone)),
         }
 
-        for a in soup.find_all(
-            "a",
-            href=True
-        ):
+    # ============================================================
+    # LANGUAGES
+    # ============================================================
 
-            href = self._clean(
-                a["href"]
-            )
+    def _parse_languages(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+    ) -> list[str]:
+        languages: list[str] = []
+        tech = listing.get("technology", {})
+        if isinstance(tech, list):
+            for t in tech:
+                if t is not None:
+                    languages.append(str(t))
 
-            if not href:
-
+        for element in soup.find_all(string=re.compile("Languages", re.I)):
+            parent = element.parent
+            if parent is None:
                 continue
+            block = parent.find_next()
+            if block is None:
+                continue
+            for item in block.find_all(["li", "span", "div"]):
+                text = self._safe_text(item)
+                if text and len(text) < 40:
+                    languages.append(text)
 
-            if href.startswith(
-                "mailto:"
-            ):
+        if not languages:
+            languages.append("English")
 
-                links[ "mailto"
-                ].append( href.replace( "mailto:", "")
-                )
+        return list(dict.fromkeys(languages))
 
-            elif href.startswith(
-                "tel:"
-            ):
+    # ============================================================
+    # APPX USER ACTIONS
+    # ============================================================
 
-                links["telephone"
-                ].append( href.replace( "tel:","")
-                )
+    def _parse_user_actions(self, soup: BeautifulSoup, listing: dict[str, Any]) -> dict[str, Any]:
+        lead_info = listing.get("listing/plugins/LeadTrialInformation", {})
+        learn_more = ""
+        if isinstance(lead_info, dict):
+            learn_more = str(lead_info.get("learnMoreUrl") or "")
 
-            elif href.startswith(
-                "http"
-            ):
+        if not learn_more:
+            for script in soup.find_all("script"):
+                script_text = script.get_text()
+                if "learnMoreUrl" in script_text:
+                    match = re.search(r"learnMoreUrl\s*:\s*['\"]([^'\"]+)['\"]", script_text)
+                    if match:
+                        learn_more = match.group(1)
+                        break
 
-                links["external"
-                ].append(href)
+        return {"learn_more_url": learn_more}
 
+    # ============================================================
+    # GEOGRAPHIC FOCUS
+    # ============================================================
+
+    def _parse_geographic_focus(
+        self,
+        listing: dict[str, Any],
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        countries: list[str] = []
+        states: list[str] = []
+
+        locs = listing.get("consultantLocations", {})
+        if isinstance(locs, dict):
+            for c in locs.get("countries", []):
+                if isinstance(c, str):
+                    countries.append(c)
+                elif isinstance(c, dict) and c.get("name"):
+                    countries.append(str(c.get("name")))
+            for s in locs.get("states", []):
+                if isinstance(s, str):
+                    states.append(s)
+                elif isinstance(s, dict) and s.get("name"):
+                    states.append(str(s.get("name")))
+
+        hq = str(publisher.get("hQLocation") or "")
+        if hq and not countries:
+            parts = [p.strip() for p in hq.split(",")]
+            if parts:
+                countries.append(parts[-1])
+
+        return {
+            "countries": list(dict.fromkeys(countries)),
+            "states": list(dict.fromkeys(states)),
+        }
+
+    # ============================================================
+    # CONTACT
+    # ============================================================
+
+    def _parse_contact(
+        self,
+        soup: BeautifulSoup,
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        contact = {
+            "website": str(publisher.get("website") or ""),
+            "email": str(publisher.get("email") or ""),
+            "phone": str(publisher.get("phone") or ""),
+            "headquarters": str(publisher.get("hQLocation") or publisher.get("headquarters") or ""),
+        }
+
+        labels = soup.select(".appx-extended-detail-subsection-label")
+        for label in labels:
+            key = self._safe_text(label).lower()
+            value = label.find_next_sibling("div")
+            if value is None:
+                continue
+            text = self._safe_text(value)
+            link = value.find("a")
+            href = self._clean(link.get("href")) if link is not None else ""
+
+            if "website" in key and not contact["website"]:
+                contact["website"] = href or text
+            elif "email" in key and not contact["email"]:
+                contact["email"] = href.replace("mailto:", "") if href else text
+            elif "phone" in key and not contact["phone"]:
+                contact["phone"] = text
+            elif "headquarters" in key and not contact["headquarters"]:
+                contact["headquarters"] = text
+
+        return contact
+
+    # ============================================================
+    # ABOUT SECTION
+    # ============================================================
+
+    def _parse_about(
+        self,
+        soup: BeautifulSoup,
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        about: dict[str, Any] = {}
+        if publisher.get("yearFounded"):
+            about["Year Founded"] = str(publisher.get("yearFounded"))
+        if publisher.get("employees"):
+            about["Company Size"] = str(publisher.get("employees"))
+        if publisher.get("hQLocation"):
+            about["Headquarters"] = str(publisher.get("hQLocation"))
+        if publisher.get("website"):
+            about["Website"] = str(publisher.get("website"))
+
+        labels = soup.select(".appx-extended-detail-subsection-label")
+        for label in labels:
+            key = self._safe_text(label)
+            value = label.find_next_sibling("div")
+            if value is None or key in about:
+                continue
+            link = value.find("a")
+            if link is not None and link.get("href"):
+                about[key] = self._clean(link.get("href"))
             else:
+                about[key] = self._safe_text(value)
 
-                links["internal"
-                ].append(href
-                )
+        return about
 
-        for key in links:
+    # ============================================================
+    # DESCRIPTION
+    # ============================================================
 
-            links[key] = list(
-                dict.fromkeys(
-                    links[key]
-                )
-            )
+    def _parse_description(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+        publisher: dict[str, Any],
+    ) -> list[str]:
+        full_desc = str(
+            listing.get("fullDescription")
+            or listing.get("description")
+            or publisher.get("description")
+            or ""
+        )
+        if full_desc:
+            paragraphs = [
+                p.strip() for p in full_desc.split("\n") if len(p.strip()) > 20
+            ]
+            if paragraphs:
+                return paragraphs
+            return [full_desc]
 
-        return links
+        paragraphs: list[str] = []
+        for item in soup.select(
+            ".appx-multi-line-fixed, .appx-description, .slds-rich-text-editor__output p"
+        ):
+            text = self._safe_text(item)
+            if text and len(text) > 40 and text not in paragraphs:
+                paragraphs.append(text)
 
+        return paragraphs
+
+    # ============================================================
+    # HIGHLIGHTS
+    # ============================================================
+
+    def _parse_highlights(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+    ) -> list[str]:
+        highlights: list[str] = []
+        competencies = listing.get("consultantCompetencies", {})
+        if isinstance(competencies, dict):
+            for item in competencies.get("items", []):
+                if isinstance(item, str):
+                    highlights.append(item)
+                elif isinstance(item, dict) and item.get("name"):
+                    highlights.append(str(item.get("name")))
+
+        if not highlights and listing.get("fullDescription"):
+            lines = str(listing.get("fullDescription", "")).split("\n")
+            for line in lines:
+                line_s = line.strip()
+                if line_s.startswith(("•", "★", "⦿", "-", "*")) and len(line_s) > 10:
+                    highlights.append(line_s.lstrip("•★⦿-* "))
+
+        if not highlights:
+            for item in soup.select("li"):
+                text = self._safe_text(item)
+                if 15 < len(text) < 250:
+                    highlights.append(text)
+
+        return list(dict.fromkeys(highlights))[:15]
+
+    # ============================================================
+    # OVERVIEW
+    # ============================================================
+
+    def _parse_overview(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+        publisher: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "title": str(
+                listing.get("seoTitle")
+                or listing.get("name")
+                or self._safe_text(soup.select_one(".appx-overview-title"))
+                or ""
+            ),
+            "description": str(
+                listing.get("fullDescription")
+                or listing.get("description")
+                or publisher.get("description")
+                or self._safe_text(soup.select_one(".appx-multi-line-fixed"))
+                or ""
+            ),
+        }

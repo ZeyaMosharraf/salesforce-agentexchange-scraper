@@ -156,6 +156,7 @@ salesforce-app-exchange-partner-pipeline/
 │   └── partners.json             # Full nested JSON dataset
 │
 ├── .env                          # Local environment variables settings
+├── .env.example                  # Template for environment variables
 ├── .gitignore                    # Files excluded from git
 ├── pyproject.toml                # Project configurations and dependency declarations
 ├── requirements.txt              # Standard Python dependencies
@@ -205,11 +206,25 @@ pip install -e .
 
 ### 1. Environment Settings
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and configure as required:
+
+**Windows (PowerShell)**
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS / Linux**
+```bash
+cp .env.example .env
+```
+
+Example configuration:
 
 ```env
 API_URL=https://findpartners.salesforce.com/webruntime/api/apex/execute?language=en-US&asGuest=true&htmlEncode=false
 REQUEST_TIMEOUT=30
+USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+MAX_WORKERS=8
 ```
 
 ### 2. Run the Pipeline
