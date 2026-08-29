@@ -1,8 +1,10 @@
 import json
 import re
+from urllib.parse import urlparse
 from typing import Any
 
 from bs4 import BeautifulSoup
+from src.config import LANGUAGE_MAP
 from src.utils.logger import logger
 
 
@@ -34,8 +36,9 @@ class HtmlTransformation:
                 "links": self._parse_links(soup, publisher),
                 "languages": self._parse_languages(soup, listing),
                 "user_action": self._parse_user_actions(soup, listing),
-                "geographic": self._parse_geographic_focus(listing, publisher),
-                "contact": self._parse_contact(soup, publisher),
+                "geographic": self._parse_geographic_focus(soup, listing, publisher),
+                "competencies": self._parse_competencies(soup, listing),
+                "contact": self._parse_contact(soup, listing, publisher),
                 "about": self._parse_about(soup, publisher),
                 "description": self._parse_description(soup, listing, publisher),
                 "highlight": self._parse_highlights(soup, listing),
@@ -428,7 +431,7 @@ class HtmlTransformation:
         }
 
     # ============================================================
-    # LANGUAGES
+    # LANGUAGES (SUPPORTED LANGUAGES)
     # ============================================================
 
     def _parse_languages(
@@ -437,23 +440,52 @@ class HtmlTransformation:
         listing: dict[str, Any],
     ) -> list[str]:
         languages: list[str] = []
-        tech = listing.get("technology", {})
-        if isinstance(tech, list):
-            for t in tech:
-                if t is not None:
-                    languages.append(str(t))
 
-        for element in soup.find_all(string=re.compile("Languages", re.I)):
-            parent = element.parent
-            if parent is None:
-                continue
-            block = parent.find_next()
-            if block is None:
-                continue
-            for item in block.find_all(["li", "span", "div"]):
-                text = self._safe_text(item)
-                if text and len(text) < 40:
+        # 1. State JSON: listing/extensions/consultant/listings/Listing.languages
+        consultant_ext = listing.get(
+            "listing/extensions/consultant/listings/Listing", {}
+        )
+        if isinstance(consultant_ext, dict):
+            for code in consultant_ext.get("languages", []):
+                code_str = str(code).strip()
+                languages.append(LANGUAGE_MAP.get(code_str.lower(), code_str))
+
+        # Check extensions array
+        if not languages:
+            for ext in listing.get("extensions", []):
+                if isinstance(ext, dict):
+                    ext_data = ext.get("data", {})
+                    if isinstance(ext_data, dict):
+                        for code in ext_data.get("languages", []):
+                            code_str = str(code).strip()
+                            languages.append(LANGUAGE_MAP.get(code_str.lower(), code_str))
+
+        # 2. DOM Selector: data-testid="languages-section" or text containing •
+        if not languages:
+            node = (
+                soup.select_one('[data-testid="languages-section"] p')
+                or soup.select_one('.languages-container p')
+                or soup.select_one('[data-testid="supported-languages"]')
+            )
+            if node is not None:
+                text = self._safe_text(node)
+                if "•" in text:
+                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 40]
+                    languages.extend(items)
+                elif text:
                     languages.append(text)
+
+        if not languages:
+            for element in soup.find_all(string=re.compile(r"Supported Languages", re.I)):
+                parent = element.parent
+                if parent is None:
+                    continue
+                container = parent.find_next_sibling() or parent.parent
+                if container is not None:
+                    text = self._safe_text(container)
+                    if "•" in text:
+                        items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 40]
+                        languages.extend(items)
 
         if not languages:
             languages.append("English")
@@ -482,35 +514,74 @@ class HtmlTransformation:
         return {"learn_more_url": learn_more}
 
     # ============================================================
-    # GEOGRAPHIC FOCUS
+    # GEOGRAPHIC FOCUS (OPERATING & SERVED COUNTRIES)
     # ============================================================
 
     def _parse_geographic_focus(
         self,
+        soup: BeautifulSoup,
         listing: dict[str, Any],
         publisher: dict[str, Any],
     ) -> dict[str, Any]:
         countries: list[str] = []
         states: list[str] = []
 
+        # 1. State JSON: consultantLocations.locations
         locs = listing.get("consultantLocations", {})
         if isinstance(locs, dict):
-            for c in locs.get("countries", []):
-                if isinstance(c, str):
-                    countries.append(c)
-                elif isinstance(c, dict) and c.get("name"):
-                    countries.append(str(c.get("name")))
-            for s in locs.get("states", []):
-                if isinstance(s, str):
-                    states.append(s)
-                elif isinstance(s, dict) and s.get("name"):
-                    states.append(str(s.get("name")))
+            # Case A: {"locations": [{"countryCode": "US", "countryName": "United States Of America"}, ...]}
+            for item in locs.get("locations", []):
+                if isinstance(item, dict) and item.get("countryName"):
+                    cname = str(item.get("countryName")).strip()
+                    if cname:
+                        countries.append(cname)
+                elif isinstance(item, str) and item.strip():
+                    countries.append(item.strip())
 
-        hq = str(publisher.get("hQLocation") or "")
-        if hq and not countries:
-            parts = [p.strip() for p in hq.split(",")]
-            if parts:
-                countries.append(parts[-1])
+            # Case B: {"countries": [{"name": "..."}, ...]}
+            for c in locs.get("countries", []):
+                if isinstance(c, str) and c.strip():
+                    countries.append(c.strip())
+                elif isinstance(c, dict) and c.get("name"):
+                    cname = str(c.get("name")).strip()
+                    if cname:
+                        countries.append(cname)
+
+            for s in locs.get("states", []):
+                if isinstance(s, str) and s.strip():
+                    states.append(s.strip())
+                elif isinstance(s, dict) and s.get("name"):
+                    sname = str(s.get("name")).strip()
+                    if sname:
+                        states.append(sname)
+
+        # 2. DOM Selector: data-testid="geographic-focus-countries" / .countries-container
+        if not countries:
+            node = (
+                soup.select_one('[data-testid="geographic-focus-countries"]')
+                or soup.select_one('.countries-container p.section-text')
+            )
+            if node is not None:
+                text = self._safe_text(node)
+                if "•" in text:
+                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
+                    countries.extend(items)
+                elif text:
+                    countries.append(text)
+
+        # 3. DOM Selector for states: data-testid="geographic-focus-states" / .states-container
+        if not states:
+            node = (
+                soup.select_one('[data-testid="geographic-focus-states"]')
+                or soup.select_one('.states-container p.section-text')
+            )
+            if node is not None:
+                text = self._safe_text(node)
+                if "•" in text:
+                    items = [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
+                    states.extend(items)
+                elif text:
+                    states.append(text)
 
         return {
             "countries": list(dict.fromkeys(countries)),
@@ -518,21 +589,101 @@ class HtmlTransformation:
         }
 
     # ============================================================
-    # CONTACT
+    # COMPETENCIES (INDUSTRY & PRODUCT COMPETENCIES)
+    # ============================================================
+
+    def _parse_competencies(
+        self,
+        soup: BeautifulSoup,
+        listing: dict[str, Any],
+    ) -> dict[str, list[str]]:
+        industry_competencies: list[str] = []
+        product_competencies: list[str] = []
+
+        comp = listing.get("consultantCompetencies", {})
+        if isinstance(comp, dict):
+            for item in comp.get("industryCompetencies", []):
+                if isinstance(item, str) and item.strip():
+                    industry_competencies.append(item.strip())
+                elif isinstance(item, dict) and item.get("name"):
+                    industry_competencies.append(str(item.get("name")).strip())
+
+            for item in comp.get("productCompetencies", []):
+                if isinstance(item, str) and item.strip():
+                    product_competencies.append(item.strip())
+                elif isinstance(item, dict) and item.get("name"):
+                    product_competencies.append(str(item.get("name")).strip())
+
+        # Fallback to DOM parsing if state is empty
+        if not industry_competencies:
+            for element in soup.find_all(string=re.compile(r"Industry Competencies", re.I)):
+                parent = element.parent
+                if parent is None:
+                    continue
+                container = parent.find_next_sibling() or parent.parent
+                if container is not None:
+                    text = self._safe_text(container)
+                    if "•" in text:
+                        industry_competencies.extend(
+                            [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
+                        )
+
+        if not product_competencies:
+            for element in soup.find_all(string=re.compile(r"Product Competencies", re.I)):
+                parent = element.parent
+                if parent is None:
+                    continue
+                container = parent.find_next_sibling() or parent.parent
+                if container is not None:
+                    text = self._safe_text(container)
+                    if "•" in text:
+                        product_competencies.extend(
+                            [p.strip() for p in text.split("•") if p.strip() and len(p.strip()) < 60]
+                        )
+
+        return {
+            "industry_competencies": list(dict.fromkeys(industry_competencies)),
+            "product_competencies": list(dict.fromkeys(product_competencies)),
+        }
+
+    # ============================================================
+    # CONTACT & DOMAIN DISCOVERY
     # ============================================================
 
     def _parse_contact(
         self,
         soup: BeautifulSoup,
+        listing: dict[str, Any],
         publisher: dict[str, Any],
     ) -> dict[str, Any]:
-        contact = {
-            "website": str(publisher.get("website") or ""),
-            "email": str(publisher.get("email") or ""),
-            "phone": str(publisher.get("phone") or ""),
-            "headquarters": str(publisher.get("hQLocation") or publisher.get("headquarters") or ""),
-        }
+        website = str(publisher.get("website") or "")
 
+        # Fallback 1: learnMoreURL in consultant extension
+        if not website:
+            consultant_ext = listing.get("listing/extensions/consultant/listings/Listing", {})
+            if isinstance(consultant_ext, dict) and consultant_ext.get("learnMoreURL"):
+                website = str(consultant_ext.get("learnMoreURL"))
+
+        # Fallback 2: extensions array learnMoreURL
+        if not website:
+            for ext in listing.get("extensions", []):
+                if isinstance(ext, dict):
+                    data = ext.get("data", {})
+                    if isinstance(data, dict) and data.get("learnMoreURL"):
+                        website = str(data.get("learnMoreURL"))
+                        break
+
+        # Fallback 3: LeadTrialInformation
+        if not website:
+            lead_info = listing.get("listing/plugins/LeadTrialInformation", {})
+            if isinstance(lead_info, dict) and lead_info.get("learnMoreUrl"):
+                website = str(lead_info.get("learnMoreUrl"))
+
+        email = str(publisher.get("email") or "")
+        phone = str(publisher.get("phone") or "")
+        hq = str(publisher.get("hQLocation") or publisher.get("headquarters") or "")
+
+        # Fallback 4: DOM parsing
         labels = soup.select(".appx-extended-detail-subsection-label")
         for label in labels:
             key = self._safe_text(label).lower()
@@ -543,16 +694,43 @@ class HtmlTransformation:
             link = value.find("a")
             href = self._clean(link.get("href")) if link is not None else ""
 
-            if "website" in key and not contact["website"]:
-                contact["website"] = href or text
-            elif "email" in key and not contact["email"]:
-                contact["email"] = href.replace("mailto:", "") if href else text
-            elif "phone" in key and not contact["phone"]:
-                contact["phone"] = text
-            elif "headquarters" in key and not contact["headquarters"]:
-                contact["headquarters"] = text
+            if "website" in key and not website:
+                website = href or text
+            elif "email" in key and not email:
+                email = href.replace("mailto:", "") if href else text
+            elif "phone" in key and not phone:
+                phone = text
+            elif "headquarters" in key and not hq:
+                hq = text
 
-        return contact
+        # Clean Domain Resolution
+        domain = ""
+        if website:
+            clean_url = website if website.startswith(("http://", "https://")) else f"https://{website}"
+            try:
+                parsed = urlparse(clean_url)
+                netloc = parsed.netloc.lower()
+                if netloc.startswith("www."):
+                    netloc = netloc[4:]
+                if netloc and not any(s in netloc for s in ["salesforce.com", "appexchange.com"]):
+                    domain = netloc
+            except Exception:
+                pass
+
+        if not domain and email and "@" in email:
+            mail_domain = email.split("@")[-1].lower().strip()
+            if not any(s in mail_domain for s in ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]):
+                domain = mail_domain
+                if not website:
+                    website = f"https://www.{mail_domain}"
+
+        return {
+            "website": self._clean(website),
+            "domain": self._clean(domain),
+            "email": self._clean(email),
+            "phone": self._clean(phone),
+            "headquarters": self._clean(hq),
+        }
 
     # ============================================================
     # ABOUT SECTION
