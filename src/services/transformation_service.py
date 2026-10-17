@@ -51,25 +51,27 @@ class TransformationService:
             raise
 
     def process_partner(self, partner: dict[str, Any]) -> dict[str, Any]:
-        url = partner.get("listing_url")
+        partner_copy = partner.copy()
+        url = partner_copy.get("listing_url")
+
         if not url:
-            partner["html_status"] = "No URL"
-            return partner
+            partner_copy["html_status"] = "No URL"
+            return self.merge_transformation.transform(partner_copy, {})
 
         try:
             html = self.html_client.get(url)
 
             if html is None:
-                partner["html_status"] = "Not Found"
-                return partner
+                partner_copy["html_status"] = "Not Found"
+                return self.merge_transformation.transform(partner_copy, {})
 
             html_data = self.html_transformation.transform(html)
-            partner["html_status"] = "Success"
-            return self.merge_transformation.transform(partner, html_data)
+            partner_copy["html_status"] = "Success"
+            return self.merge_transformation.transform(partner_copy, html_data)
 
         except Exception as e:
             logger.warning(
-                f"Failed to enrich partner '{partner.get('name', 'Unknown')}' ({url}): {e}"
+                f"Failed to enrich partner '{partner_copy.get('name', 'Unknown')}' ({url}): {e}"
             )
-            partner["html_status"] = "Enrichment Error"
-            return partner
+            partner_copy["html_status"] = "Enrichment Error"
+            return self.merge_transformation.transform(partner_copy, {})

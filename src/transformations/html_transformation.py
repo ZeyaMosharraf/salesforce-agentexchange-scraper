@@ -57,8 +57,9 @@ class HtmlTransformation:
         """Extracts the embedded window.stores JSON state from page scripts."""
         for script in soup.find_all("script"):
             content = script.string or script.get_text() or ""
-            if "window.stores=" in content:
-                idx = content.find("window.stores=") + len("window.stores=")
+            match = re.search(r"window\.stores\s*=\s*", content)
+            if match:
+                idx = match.end()
                 try:
                     stores, _ = json.JSONDecoder().raw_decode(content[idx:])
                     if isinstance(stores, dict):
@@ -300,10 +301,21 @@ class HtmlTransformation:
         elif listing.get("reviewCount") is not None:
             review_count = str(listing.get("reviewCount"))
 
-        projects_completed = str(consultant_ext.get("projectsCompleted", "") or "") if isinstance(consultant_ext, dict) else ""
-        certified_experts = str(consultant_ext.get("certifiedExperts", "") or "") if isinstance(consultant_ext, dict) else ""
-        founded = str(publisher.get("yearFounded", "") or "")
-        employees = str(publisher.get("employees", "") or "")
+        def _str_val(v: Any) -> str:
+            return "" if v is None else str(v).strip()
+
+        projects_completed = (
+            _str_val(consultant_ext.get("projectsCompleted"))
+            if isinstance(consultant_ext, dict)
+            else ""
+        )
+        certified_experts = (
+            _str_val(consultant_ext.get("certifiedExperts"))
+            if isinstance(consultant_ext, dict)
+            else ""
+        )
+        founded = _str_val(publisher.get("yearFounded"))
+        employees = _str_val(publisher.get("employees"))
 
         # Fallback to text searching if empty
         if not (rating or review_count or projects_completed or certified_experts or founded or employees):

@@ -57,7 +57,7 @@ class FilterConfig:
 
 # Active filter instance used by the extraction pipeline
 filter_config = FilterConfig(
-    countries=["United States of America", "Canada"],
+    countries=["United States of America"],
     practice_size=[],
     expertises=[],
     specializations=[],

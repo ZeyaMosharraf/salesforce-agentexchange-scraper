@@ -1,3 +1,4 @@
+import threading
 import requests
 
 from src.clients.base_client import BaseClient
@@ -6,13 +7,20 @@ from src.utils.logger import logger
 
 
 class HtmlClient(BaseClient):
-    """Client for downloading HTML listing pages from AppExchange."""
+    """Client for downloading HTML listing pages from AppExchange with thread-safe sessions."""
 
     def __init__(self):
-        self.session = self._create_session(allowed_methods=["GET"])
+        self._local = threading.local()
         self.headers = {
             "User-Agent": settings.user_agent,
         }
+
+    @property
+    def session(self) -> requests.Session:
+        """Returns a thread-local requests.Session instance."""
+        if not hasattr(self._local, "session"):
+            self._local.session = self._create_session(allowed_methods=["GET"])
+        return self._local.session
 
     def get(self, url: str) -> str | None:
         try:
