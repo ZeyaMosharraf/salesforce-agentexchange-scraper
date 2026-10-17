@@ -11,8 +11,10 @@ A modular Python ETL data pipeline engineered to extract, combine, and normalize
 
 ## Documentation Links
 
-- [System Architecture](docs/architecture.md): Architectural design decisions, component interaction flows, and concurrency mechanisms.
-- [Data Dictionary](docs/data_dictionary.md): Field definitions, data types, and CSV flattening rules for the final output schemas.
+- [System Architecture](docs/architecture/architecture.md): Architectural design decisions, component interaction flows, and concurrency mechanisms.
+- [Data Dictionary](docs/architecture/data_dictionary.md): Field definitions, data types, and CSV flattening rules for the final output schemas.
+- [API Specification & History](docs/api/api-specification-and-history.md): Deep-dive comparison between legacy Apex vs. modern AppExchange REST APIs.
+- [Modern Engine Implementation Plan](docs/planning/plan-modern-v3-scraper.md): Phased roadmap to extract all 2,150 consultants.
 
 ---
 
@@ -112,8 +114,10 @@ This pipeline was engineered with clear design trade-offs and production archite
 salesforce-app-exchange-partner-pipeline/
 │
 ├── docs/
-│   ├── architecture.md           # Architecture design decisions and trade-offs
-│   └── data_dictionary.md        # Column descriptions and field schema dictionary
+│   ├── api/                      # Reverse-engineered API specs & endpoint history
+│   ├── architecture/             # System design, concurrency, and data dictionary
+│   ├── planning/                 # Phased implementation plans & roadmap
+│   └── reviews/                  # Code audits & quality reviews
 │
 ├── src/
 │   ├── clients/

@@ -10,7 +10,7 @@ This document reviews the major design and engineering trade-offs in the Salesfo
 - **Strengths**: Bypasses authentication and OAuth flow requirements, allowing public guest-access scraping. Accesses complete, structured lists of partners directly.
 - **Weaknesses**: The legacy Apex API payload contains fragile, undocumented parameters like `classname: "@udd/01p3m00000EBlzK"` and hits a strict 1,998 US count due to single-country database filters and SOQL offset limits. The modern AppExchange Discovery API (`/recommendations/v3/listings`) indexes 2,150 US consultants and uses cursor pagination with `searchQueryId`.
 - **Risks**: High risk of sudden pipeline breakage without notice from Salesforce if endpoint schemas change.
-- **Engineering Recommendation**: See `docs/api-specification-and-history.md` for complete schema specifications and migration strategies. Maintain fallback support for both endpoints in `settings.py`.
+- **Engineering Recommendation**: See `docs/api/api-specification-and-history.md` for complete schema specifications and migration strategies. Maintain fallback support for both endpoints in `settings.py`.
 - **Priority**: High
 - **Impact**: High
 - **Estimated Effort**: S
