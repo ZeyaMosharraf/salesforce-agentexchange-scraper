@@ -1,11 +1,11 @@
+from .appexchange_transformation import AppExchangeTransformation
 from .deduplicate_transformation import DeduplicateTransformation
 from .html_transformation import HtmlTransformation
 from .merge_transformation import MergeTransformation
-from .partner_transformation import PartnerTransformation
 
 __all__ = [
+    "AppExchangeTransformation",
     "DeduplicateTransformation",
     "HtmlTransformation",
     "MergeTransformation",
-    "PartnerTransformation",
 ]

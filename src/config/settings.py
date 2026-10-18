@@ -32,7 +32,7 @@ class Settings:
 
     api_url: str = os.getenv(
         "API_URL",
-        "https://findpartners.salesforce.com/webruntime/api/apex/execute?language=en-US&asGuest=true&htmlEncode=false",
+        "https://api.appexchange.salesforce.com/recommendations/v3/listings",
     )
     request_timeout: int = _get_int("REQUEST_TIMEOUT", 30)
     user_agent: str = os.getenv(

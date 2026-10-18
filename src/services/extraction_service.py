@@ -1,122 +1,89 @@
-import json
+"""
+Extraction Service.
+
+Coordinates extraction of AppExchange partner listings across configured countries
+using the modern AppExchange recommendations REST API and cursor pagination.
+"""
+
 from typing import Any
 
-from src.clients import SalesforceClient
+from src.clients.appexchange_client import AppExchangeClient
 from src.config import filter_config
-from src.models.partner_filter import PartnerFilter
+from src.config.filters import COUNTRY_TO_LOCATION_CODE
 from src.utils.logger import logger
 
 
 class ExtractionService:
+    """Extracts partner listings from AppExchange for all configured countries."""
 
     def __init__(self):
-        self.client = SalesforceClient()
-
-    def _generate_filter_combinations(
-        self,
-    ) -> list[tuple[list[str], list[str], str, str]]:
-        """
-        Generates individual filter combinations (c_list, s_list, c_label, s_label).
-        Loops dynamically through configured countries and practice sizes.
-        """
-        countries = filter_config.countries
-        practice_sizes = filter_config.practice_size
-
-        country_items: list[tuple[list[str], str]] = (
-            [([c], c) for c in countries] if countries else [([], "")]
-        )
-        size_items: list[tuple[list[str], str]] = (
-            [([s], s) for s in practice_sizes] if practice_sizes else [([], "")]
-        )
-
-        combos = []
-        for c_list, c_label in country_items:
-            for s_list, s_label in size_items:
-                combos.append((c_list, s_list, c_label, s_label))
-        return combos
+        self.client = AppExchangeClient()
 
     def extract(self) -> list[dict[str, Any]]:
-        logger.info("Starting Salesforce extraction")
-        combinations = self._generate_filter_combinations()
-        logger.info(f"Total filter combinations to query: {len(combinations)}")
+        """
+        Extracts all listings across configured target countries.
+        - If countries is empty ([]): Extracts ALL global listings without geographic restriction.
+        - If countries has items: Loops sequentially through each specified country.
 
-        responses = []
+        Returns:
+            List of raw page response dictionaries.
+        """
+        countries = filter_config.countries
+        listing_type = filter_config.listing_type or "consultants"
+        page_size = filter_config.page_size or 100
 
-        for combo_idx, (c_list, s_list, c_label, s_label) in enumerate(
-            combinations, 1
-        ):
-            query_desc = []
-            if c_label:
-                query_desc.append(f"Country: {c_label}")
-            if s_label:
-                query_desc.append(f"Practice Size: {s_label}")
-            desc_str = ", ".join(query_desc) if query_desc else "All Records"
+        # Explicit handling: empty list means ALL records globally (no silent defaulting)
+        if not countries:
+            logger.info(
+                "No country filter specified; extracting ALL listings globally without geographic restriction."
+            )
+            print(f"\n[Extraction] Location: Global (All Countries) | Type: {listing_type}")
 
-            logger.info(f"[{combo_idx}/{len(combinations)}] Querying {desc_str}")
-            print(f"\n[Extraction {combo_idx}/{len(combinations)}] Querying: {desc_str}")
+            responses = self.client.fetch_all_pages(
+                location=None,
+                listing_type=listing_type,
+                page_size=page_size,
+            )
 
-            offset = 0
-            while True:
-                try:
-                    filters = PartnerFilter(
-                        countries=c_list,
-                        practice_size=s_list,
-                        expertises=filter_config.expertises,
-                        specializations=filter_config.specializations,
-                        states=filter_config.states,
-                        rating=filter_config.rating,
-                        sorted_by=filter_config.sorted_by,
-                        limit_size=filter_config.limit_size,
-                        offset=offset,
-                    )
+            for resp in responses:
+                resp["_query_country"] = ""
 
-                    response = self.client.post(filters.to_payload())
+            return responses
 
-                    return_value = response["returnValue"]
-                    if isinstance(return_value, str):
-                        return_value = json.loads(return_value)
+        # When specific countries are provided, query each explicitly
+        logger.info(
+            f"Starting partner extraction across {len(countries)} target countries: {countries}"
+        )
 
-                    # Check for Salesforce error
-                    if not return_value.get("isSuccess", True):
-                        error = return_value.get("error", "")
+        all_responses: list[dict[str, Any]] = []
 
-                        if "Maximum SOQL offset allowed" in error:
-                            logger.warning(
-                                f"Reached Salesforce SOQL OFFSET limit at offset {offset} for {desc_str}."
-                            )
-                            break
+        for country_idx, country_name in enumerate(countries, 1):
+            # Resolve 2-letter country code (or pass through if already 2 letters)
+            loc_code = COUNTRY_TO_LOCATION_CODE.get(
+                country_name,
+                country_name if len(country_name) == 2 else None,
+            )
 
-                        logger.error(error)
-                        raise RuntimeError(error)
+            logger.info(
+                f"[{country_idx}/{len(countries)}] Extracting country: '{country_name}' (Location: {loc_code})"
+            )
+            print(
+                f"\n[Extraction {country_idx}/{len(countries)}] Country: {country_name} (Code: {loc_code or 'Global'})"
+            )
 
-                    partners = return_value["results"]["partners"]
+            responses = self.client.fetch_all_pages(
+                location=loc_code,
+                listing_type=listing_type,
+                page_size=page_size,
+            )
 
-                    if not partners:
-                        break
+            # Tag each page response with the country label for downstream normalization
+            for resp in responses:
+                resp["_query_country"] = country_name
 
-                    # Tag each partner with the active query filter metadata
-                    for partner_rec in partners:
-                        partner_rec["_query_country"] = c_label
-                        partner_rec["_query_practice_size"] = s_label
+            all_responses.extend(responses)
 
-                    response["returnValue"] = return_value
-                    responses.append(response)
-
-                    print(
-                        f"\r  -> Offset: {offset} | Fetched: {len(partners)} partners",
-                        end="",
-                        flush=True,
-                    )
-
-                    offset += 1
-
-                except Exception:
-                    logger.exception(
-                        f"Extraction failed for {desc_str} at offset {offset}"
-                    )
-                    raise
-
-            print()
-
-        logger.info(f"Extraction completed ({len(responses)} total page responses)")
-        return responses
+        logger.info(
+            f"Extraction completed: {len(all_responses)} total page responses collected"
+        )
+        return all_responses

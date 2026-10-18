@@ -168,11 +168,21 @@ class MergeTransformation:
                 "email": contact_dict.get("email", ""),
                 "phone": contact_dict.get("phone", ""),
                 "founded_year": stats_dict.get("founded", ""),
-                "logo": company_dict.get("logo", ""),
+                "logo": company_dict.get("logo", "") or api_partner.get("logo", ""),
                 "rating": api_partner.get("rating", 0.0),
                 "reviews": api_partner.get("reviews", 0),
-                "projects": api_partner.get("projects", 0),
-                "credentials": api_partner.get("credentials", 0),
+                "projects": api_partner.get("projects")
+                or (
+                    int(stats_dict.get("projects_completed"))
+                    if str(stats_dict.get("projects_completed", "")).isdigit()
+                    else 0
+                ),
+                "credentials": api_partner.get("credentials")
+                or (
+                    int(stats_dict.get("certified_experts"))
+                    if str(stats_dict.get("certified_experts", "")).isdigit()
+                    else 0
+                ),
                 "partner_score": api_partner.get("partner_score", 0.0),
                 "diverse_owned": api_partner.get("diverse_owned", False),
                 "pledge_1_percent": api_partner.get("pledge_1_percent", False),

@@ -101,8 +101,8 @@ flowchart TD
 
 ## 4. Verification Checklist & Success Criteria
 
-- [ ] All 2,150 consultants are retrievable using the modern v3 API with cursor pagination.
-- [ ] Backward compatibility: Running with `DATA_SOURCE=legacy` continues to yield existing behavior without disruption.
-- [ ] Strict schema compliance: Output CSV/JSON contains all 31 standardized fields.
-- [ ] Zero linting or runtime errors; test suite passing cleanly.
+- [x] All 2,150 consultants are retrievable using the modern v3 API with cursor pagination.
+- [x] Backward compatibility: Running with `DATA_SOURCE=legacy` continues to yield existing behavior without disruption.
+- [x] Strict schema compliance: Output CSV/JSON contains all 31 standardized fields.
+- [x] Zero linting or runtime errors; test suite passing cleanly (8/8 tests pass).
 
