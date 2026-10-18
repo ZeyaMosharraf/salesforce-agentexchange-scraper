@@ -51,8 +51,27 @@ class FilterConfig:
     # Sorting order (e.g. "expertise", "name", "rating")
     sorted_by: str = "expertise"
 
-    # API batch size per request (default 500)
+    # API batch size per request for legacy Apex API (default 500)
     limit_size: int = 500
+
+    # Modern REST API parameters
+    modern_location: str = "US"
+    modern_type: str = "consultants"
+    modern_page_size: int = 100
+
+
+COUNTRY_TO_LOCATION_CODE: dict[str, str] = {
+    "United States of America": "US",
+    "United States": "US",
+    "USA": "US",
+    "Canada": "CA",
+    "United Kingdom": "GB",
+    "Australia": "AU",
+    "Germany": "DE",
+    "France": "FR",
+    "India": "IN",
+    "Japan": "JP",
+}
 
 
 # Active filter instance used by the extraction pipeline
@@ -64,4 +83,8 @@ filter_config = FilterConfig(
     states=[],
     rating=None,
     sorted_by="expertise",
+    limit_size=500,
+    modern_location="US",
+    modern_type="consultants",
+    modern_page_size=100,
 )

@@ -3,6 +3,9 @@ from typing import Any
 
 from src.clients.html_client import HtmlClient
 from src.config import settings
+from src.transformations.appexchange_v3_transformation import (
+    AppExchangeV3Transformation,
+)
 from src.transformations.deduplicate_transformation import (
     DeduplicateTransformation,
 )
@@ -21,6 +24,7 @@ class TransformationService:
     def __init__(self):
         self.html_client = HtmlClient()
         self.partner_transformation = PartnerTransformation()
+        self.v3_transformation = AppExchangeV3Transformation()
         self.deduplicate_transformation = DeduplicateTransformation()
         self.html_transformation = HtmlTransformation()
         self.merge_transformation = MergeTransformation()
@@ -29,8 +33,18 @@ class TransformationService:
         logger.info("Starting transformation pipeline")
 
         try:
-            # 1. Parse raw API responses into partner dictionaries
-            raw_partners = self.partner_transformation.transform(raw_data)
+            # 1. Detect response type and parse into standardized partner dictionaries
+            is_modern = any(
+                "listings" in r or r.get("_data_source") == "modern"
+                for r in raw_data
+                if isinstance(r, dict)
+            )
+            if is_modern:
+                logger.info("Detected modern AppExchange v3 response format")
+                raw_partners = self.v3_transformation.transform(raw_data)
+            else:
+                logger.info("Detected legacy Salesforce Apex response format")
+                raw_partners = self.partner_transformation.transform(raw_data)
 
             # 2. Deduplicate partners before performing network enrichment
             unique_partners = self.deduplicate_transformation.transform(raw_partners)
