@@ -19,7 +19,8 @@ docs/
 │   └── pipeline-flow.md                   # Visual sequence and ETL execution flow
 ├── planning/
 │   ├── future-roadmap.md                  # High-level vision and roadmap items
-│   └── plan-modern-v3-scraper.md          # Phased plan to integrate the modern v3 scraper engine
+│   ├── plan-modern-v3-scraper.md          # Phased plan to integrate the modern v3 scraper engine
+│   └── plan-v2-legacy-removal.md          # Phased plan for v2.0 cleanup and legacy code removal
 └── reviews/
     ├── code-review.md                     # Code quality audit and gap analysis
     └── repository-review.md               # Repository health and production readiness review
@@ -46,6 +47,7 @@ Detailed analysis of the two underlying Salesforce AppExchange architectures:
 
 ### 3. Implementation Plans
 - [Modern Engine Implementation Plan](planning/plan-modern-v3-scraper.md): Step-by-step phased execution plan to integrate the modern v3 AppExchange scraper engine.
+- [v2.0 Legacy Removal Plan](planning/plan-v2-legacy-removal.md): Phased execution plan for legacy code removal, canonical class naming, and v2.0 release.
 - [Future Roadmap](planning/future-roadmap.md): Planned capabilities, streaming exporters, and multi-cloud extensions.
 
 ### 4. Audits & Reviews

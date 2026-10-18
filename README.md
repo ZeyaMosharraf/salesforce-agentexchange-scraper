@@ -1,110 +1,114 @@
 # Salesforce AppExchange Partner Data Pipeline
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Salesforce](https://img.shields.io/badge/Salesforce-AppExchange-00A1E0?style=for-the-badge&logo=salesforce&logoColor=white)
+![Salesforce](https://img.shields.io/badge/Salesforce-AppExchange%20REST%20v3-00A1E0?style=for-the-badge&logo=salesforce&logoColor=white)
 ![ETL Architecture](https://img.shields.io/badge/Architecture-Modular%20ETL-orange?style=for-the-badge)
 ![Outputs](https://img.shields.io/badge/Outputs-JSON%20%7C%20CSV-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-8%20Passing-brightgreen?style=for-the-badge)
 
-A modular Python ETL data pipeline engineered to extract, combine, and normalize Salesforce AppExchange partner data into structured JSON and CSV datasets. It merges structured partner metadata from internal Salesforce APIs with granular contact information scraped concurrently from partner web pages.
+A high-throughput, modular Python ETL data pipeline engineered to extract, combine, and normalize Salesforce AppExchange partner data into structured JSON and CSV datasets. It queries Salesforce's modern recommendations REST API using cursor-based pagination to extract all **2,150+ active enterprise consultants** (and up to **4,876 globally**), and concurrently enriches them with granular contact details, company metrics, and technical competencies scraped directly from partner web listings.
 
 ---
 
-## Documentation Links
+## Documentation Hub
 
+- [Documentation Index](docs/README.md): Central hub linking all technical specifications, ADRs, and plans.
 - [System Architecture](docs/architecture/architecture.md): Architectural design decisions, component interaction flows, and concurrency mechanisms.
-- [Data Dictionary](docs/architecture/data_dictionary.md): Field definitions, data types, and CSV flattening rules for the final output schemas.
-- [API Specification & History](docs/api/api-specification-and-history.md): Deep-dive comparison between legacy Apex vs. modern AppExchange REST APIs.
-- [Modern Engine Implementation Plan](docs/planning/plan-modern-v3-scraper.md): Phased roadmap to extract all 2,150 consultants.
+- [Data Dictionary](docs/architecture/data_dictionary.md): Field definitions, data types, and CSV flattening rules for the 31-column output schema.
+- [API Specification & Endpoint History](docs/api/api-specification-and-history.md): Technical analysis explaining the legacy Apex API (1,998 records) vs. modern REST API (2,150 records) and cursor pagination.
+- [Modern Engine Plan](docs/planning/plan-modern-v3-scraper.md): Architecture roadmap for the v3 recommendations engine.
+- [v2.0 Streamlining Plan](docs/planning/plan-v2-legacy-removal.md): Phased execution plan for legacy code removal and canonical class refactoring.
 
 ---
 
 ## Real-World Business Problem
 
-Sales & Revenue teams, B2B lead generation specialists, and market intelligence analysts frequently require complete partner profiles across Salesforce ISVs, consulting firms, and implementation agencies. 
+Revenue operations teams, B2B lead generation specialists, and market intelligence analysts frequently require complete partner profiles across Salesforce ISVs, consulting firms, and implementation agencies.
 
-However, acquiring this data presents a major technical bottleneck:
-- **API Fragmentation**: The Salesforce API returns numerical metrics (ratings, certification counts, total project numbers, expertise tags) but excludes direct business contact details.
-- **Web Listing Fragmentation**: Detailed contact emails, corporate phone numbers, street addresses, taglines, whitepaper resources, and employee sizes exist exclusively on individual web listing pages.
-- **Manual Overhead**: Manually collecting data for thousands of partner firms across multiple web pages is inefficient, error-prone, and unsustainable.
+However, acquiring this data presents major technical bottlenecks:
+- **API Fragmentation**: Public listings provide titles and ratings but omit direct business websites, domains, corporate emails, and multi-cloud competencies.
+- **Web Listing Fragmentation**: Detailed contact emails, headquarters addresses, employee sizes, and certification metrics exist exclusively on individual web listing pages.
+- **Legacy Endpoint Caps**: Legacy Visualforce search handlers restrict queries to primary country headquarters and fail past SOQL offset 2,000.
+- **Silent Concurrency Issues**: Multi-threaded scraping across thousands of URLs can suffer from thread race conditions and socket pool contention if HTTP sessions are improperly shared.
 
 ---
 
-## The Solution & Engineering Strategy
+## The Solution & Pipeline Architecture
 
-Rather than building a simple web scraper, this project was designed as a **decoupled, modular ETL pipeline**. It combines structured API extraction with concurrent web page parsing to build a single, unified, and enriched partner dataset.
+Rather than a fragile script, this project is engineered as a **decoupled, modular ETL pipeline** with thread isolation, automatic retry backoffs, and live progress observability.
 
 ```text
                   Salesforce AppExchange Platform
                                  │
                                  ▼
-                      Salesforce Partner API
+              AppExchange Recommendations REST API (v3)
                                  │
                                  ▼
-                       Extraction Service
+                     Extraction Service
+        (Cursor Pagination: searchQueryUid ➔ searchQueryId)
                                  │
                                  ▼
-                       Raw API Response (JSON)
+                      Raw API Responses (JSON)
                                  │
                                  ▼
-                     Transformation Service
+                   Transformation Service
                                  │
-             ┌───────────────────┴───────────────────┐
-             │                                       │
-             ▼                                       ▼
-     Parse & Flatten API Data             Download Listing HTML
-             │                                       │
-             └───────────────────┬───────────────────┘
+            ┌────────────────────┴────────────────────┐
+            ▼                                         ▼
+   AppExchangeTransformation                 HtmlClient (ThreadPool)
+ (Normalize 31-Column Baseline)             (Thread-Local Session Isolation)
+            │                                         │
+            └────────────────────┬────────────────────┘
                                  ▼
-                        HTML Data Extraction
-                                 │
-                                 ▼
-                     Data Enrichment & Merge
+                      MergeTransformation
+          (Enrich Websites, Domains, Emails, & Competencies)
                                  │
                                  ▼
-                      Structured Partner Record
+                    DeduplicateTransformation
+            (Merge Cross-Country & Multi-Query Records)
                                  │
                                  ▼
-                         Export Service
-                     ┌───────────┴───────────┐
-                     ▼                       ▼
-                   JSON                     CSV
+                       Export Service
+            ┌────────────────────┴────────────────────┐
+            ▼                                         ▼
+   output/processed/                         output/processed/
+      partners.json                             partners.csv
 ```
 
 ---
 
-## Logical Architecture & Senior Engineering Decisions
+## Senior Engineering Highlights
 
-This pipeline was engineered with clear design trade-offs and production architectural principles:
+### 1. Modern REST Discovery & Cursor-Based Pagination
+- **Discovery**: Reverse-engineered the modern AppExchange search service (`https://api.appexchange.salesforce.com/recommendations/v3/listings`).
+- **Cursor Protocol**: Bypasses legacy SOQL 2,000 offset limits by capturing `searchQueryUid` on page 0 and propagating `searchQueryId` across pages 1..N.
+- **Yield**: Reliably extracts all **2,150 active US consultants** (vs. 1,998 on legacy endpoints) and **4,876 globally**.
 
-### 1. Single Responsibility & Decoupled Architecture
-- **Decision**: Separated API Clients (`clients/`), Data Transformations (`transformations/`), and Core Services (`services/`).
-- **Logical Reasoning**: Isolating HTML parsing from HTTP retrieval ensures that if Salesforce updates a web page CSS class, the API extraction stage remains unaffected (Fault Isolation).
+### 2. Thread-Local Session Isolation (`threading.local()`)
+- **Challenge**: Standard `requests.Session` instances are not thread-safe. When multiple worker threads share a session, concurrent requests cause race conditions in the urllib3 connection pool.
+- **Solution**: Implemented `threading.local()` session isolation in [`src/clients/html_client.py`](src/clients/html_client.py). Each worker thread maintains its own dedicated HTTP session and connection adapter, eliminating socket contention.
 
-### 2. Managed Concurrency over Unbounded Fetching
-- **Decision**: Implemented `ThreadPoolExecutor(max_workers=8)` for HTML listing page enrichment.
-- **Logical Reasoning**: Bounded thread pooling speeds up network downloads by over 70% while protecting the pipeline against rate-limiting (HTTP 429) or IP bans from server-side firewalls.
+### 3. Defensive Schema Harmonization (31 Standard Columns)
+- Standardized output schema ensuring that even if a partner listing returns HTTP 404 or incomplete HTML, all 31 expected columns (including `website`, `domain`, `email`, `rating`, `reviews`, `projects`, and `competencies`) are populated with safe default types without crashing.
+- Prevents falsy `0` coercion so partners with zero reviews or `0.0` rating preserve valid numerical metrics.
 
-### 3. Reverse-Engineering Private Endpoints
-- **Decision**: Inspected browser network traffic to map internal Apex endpoints (`@udd/01p3m00000EBlzK` / `getPartners`).
-- **Logical Reasoning**: Bypassed missing public API documentation by engineering custom dataclass payload builders (`PartnerFilter`) matching the exact payload schema required by Salesforce backend controllers.
+### 4. Multi-Country Sequential Ingestion
+- Supports querying multiple countries (e.g. `countries=["United States of America", "Canada"]`).
+- Automatically resolves country names to ISO 2-letter location codes (`US`, `CA`) via `COUNTRY_TO_LOCATION_CODE`.
+- When `countries = []`, explicitly fetches all global records without silent geographic restrictions.
 
-### 4. Graceful Degradation for SOQL Offset Caps
-- **Decision**: Intercepted Salesforce SOQL query caps at offset 2,000 (`Maximum SOQL offset allowed`).
-- **Logical Reasoning**: Instead of allowing the program to throw an uncaught exception, the extraction service catches the limit error, logs a warning, and safely passes all previously extracted data to the transformation stage.
+### 5. Real-Time Layered Observability
+- Live in-place `\r` terminal counters track progress during extraction and concurrent HTML enrichment:
+  ```text
+  [Extraction] Location: US | Type: consultants
+    -> Page: 21 | Fetched: 2150/2150 listings
 
-### 5. Defensive HTML Parsing & Schema Normalization
-- **Decision**: Built safe extraction utilities (`_safe_text`, `_safe_attr`) with fallback selector cascades.
-- **Logical Reasoning**: Prevents runtime `AttributeError` or `TypeError` crashes when parsing incomplete listing pages. Missing fields are normalized cleanly to empty strings or default fallback values.
+  [Transformation] Normalized 2150 partner records from API responses
+  [Deduplication] Total Extracted: 2150 | Duplicates Exist: 0 | Unique Partners: 2150
 
----
-
-## Key Pipeline Features
-
-- **Automated API Extraction**: Downloads paginated partner listings directly from Salesforce internal API endpoints.
-- **Concurrent Web Mining**: Concurrently scrapes HTML listing pages to pull public emails, websites, phone numbers, and physical addresses.
-- **Data Serialization & Normalization**: Decodes nested string-encoded JSON payloads (`returnValue`) into structured Python dictionaries.
-- **Fault-Tolerant Session Management**: Reusable HTTP sessions with `urllib3` exponential backoff retries for transient 50x and 429 response codes.
-- **Multi-Format Data Export**: Generates both nested JSON files for high-fidelity storage and flattened CSV files (with UTF-8 BOM encoding) for spreadsheet analysis.
+  [HTML Enrichment] Starting concurrent detail scraping for 2150 partners (Worker Threads: 8)
+    -> Enriched: 142/2150 (6.6%) | Success: 138 | 404: 3 | Errors: 1
+  ```
 
 ---
 
@@ -114,6 +118,7 @@ This pipeline was engineered with clear design trade-offs and production archite
 salesforce-app-exchange-partner-pipeline/
 │
 ├── docs/
+│   ├── README.md                 # Central documentation hub index
 │   ├── api/                      # Reverse-engineered API specs & endpoint history
 │   ├── architecture/             # System design, concurrency, and data dictionary
 │   ├── planning/                 # Phased implementation plans & roadmap
@@ -124,7 +129,7 @@ salesforce-app-exchange-partner-pipeline/
 │   │   ├── __init__.py           # Package export
 │   │   ├── appexchange_client.py # Client for querying AppExchange REST API
 │   │   ├── base_client.py        # Base HTTP client with retry strategies
-│   │   └── html_client.py        # Thread-safe client for downloading web pages
+│   │   └── html_client.py        # Thread-safe client with thread-local sessions
 │   │
 │   ├── config/
 │   │   ├── __init__.py           # Package export
@@ -139,7 +144,7 @@ salesforce-app-exchange-partner-pipeline/
 │   ├── services/
 │   │   ├── __init__.py           # Package export
 │   │   ├── export_service.py     # Writes JSON and CSV datasets
-│   │   ├── extraction_service.py # Manages API pagination and extraction logic
+│   │   ├── extraction_service.py # Manages API pagination and multi-country loops
 │   │   └── transformation_service.py # Coordinates multi-threaded HTML scrapers
 │   │
 │   ├── transformations/
@@ -155,92 +160,88 @@ salesforce-app-exchange-partner-pipeline/
 │   │
 │   └── main.py                   # Pipeline entry point
 │
-├── output/
-│   ├── partners.csv              # Enriched tabular CSV dataset
-│   └── partners.json             # Full nested JSON dataset
+├── tests/
+│   ├── __init__.py               # Test package
+│   ├── test_appexchange.py       # Client cursor pagination & multi-country tests
+│   └── test_scraper.py           # Thread-safety, 404 schema, & dedup tests
 │
-├── .env                          # Local environment variables settings
-├── .env.example                  # Template for environment variables
-├── .gitignore                    # Files excluded from git
-├── pyproject.toml                # Project configurations and dependency declarations
+├── output/
+│   ├── raw/                      # Raw extraction JSON responses
+│   └── processed/                # Final enriched partners.csv & partners.json
+│
+├── .env.example                  # Environment configuration template
+├── pyproject.toml                # Project configurations & dependencies
 ├── requirements.txt              # Standard Python dependencies
 └── README.md                     # Main project readme
 ```
 
 ---
 
-## Setup Instructions
+## Setup & Execution
 
-### 1. Clone the Repository
+### 1. Clone & Set Up Environment
 
 ```bash
-git clone https://github.com/<your-username>/salesforce-app-exchange-partner-pipeline.git
-cd salesforce-app-exchange-partner-pipeline
-```
+git clone https://github.com/ZeyaMosharraf/salesforce-agentexchange-scraper.git
+cd salesforce-agentexchange-scraper
 
-### 2. Create a Virtual Environment
-
-**Windows**
-```bash
+# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate
-```
 
-**macOS / Linux**
-```bash
-python3 -m venv .venv
+# Activate virtual environment
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux / macOS:
 source .venv/bin/activate
-```
 
-### 3. Install Dependencies
-
-Using `requirements.txt`:
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-Or editable installation via `pyproject.toml`:
+### 2. Configure Environment
+
+Copy `.env.example` to `.env`:
+
 ```bash
-pip install -e .
-```
-
----
-
-## Execution & Output
-
-### 1. Environment Settings
-
-Copy `.env.example` to `.env` and configure as required:
-
-**Windows (PowerShell)**
-```powershell
+# Windows (PowerShell):
 Copy-Item .env.example .env
-```
-
-**macOS / Linux**
-```bash
+# Linux / macOS:
 cp .env.example .env
 ```
 
-Example configuration:
-
+Default configuration in `.env`:
 ```env
-API_URL=https://findpartners.salesforce.com/webruntime/api/apex/execute?language=en-US&asGuest=true&htmlEncode=false
+API_URL=https://api.appexchange.salesforce.com/recommendations/v3/listings
 REQUEST_TIMEOUT=30
-USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
 MAX_WORKERS=8
 ```
 
-### 2. Run the Pipeline
-
-Execute the pipeline from the project root:
+### 3. Run the Pipeline
 
 ```bash
 python -m src.main
 ```
 
-### 3. Generated Datasets
+### 4. Run the Test Suite
 
-Execution logs will track pagination offsets and multi-threaded scraping progress. Final datasets are output directly to:
-- `output/partners.json` (Full nested JSON dataset)
-- `output/partners.csv` (Enriched tabular CSV dataset)
+Run all automated unit tests:
+
+```bash
+python -m unittest discover tests
+```
+
+Output:
+```text
+Ran 8 tests in 0.003s
+
+OK
+```
+
+---
+
+## Output Datasets
+
+Outputs are saved directly to `output/`:
+- `output/raw/partners_raw.json`: Unprocessed API payloads preserving all upstream metadata.
+- `output/processed/partners.json`: Complete nested JSON dataset including company details, contact information, statistics, and competencies.
+- `output/processed/partners.csv`: Enriched, UTF-8 BOM encoded tabular dataset conforming strictly to the 31-column data dictionary.
