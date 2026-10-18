@@ -1,19 +1,19 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from src.clients.appexchange_v3_client import AppExchangeV3Client
+from src.clients.appexchange_client import AppExchangeClient
 from src.services.extraction_service import ExtractionService
 from src.services.transformation_service import TransformationService
-from src.transformations.appexchange_v3_transformation import (
-    AppExchangeV3Transformation,
+from src.transformations.appexchange_transformation import (
+    AppExchangeTransformation,
 )
 
 
-class TestAppExchangeV3(unittest.TestCase):
+class TestAppExchange(unittest.TestCase):
 
-    def test_v3_client_cursor_pagination(self):
-        """Test that AppExchangeV3Client correctly handles cursor pagination via searchQueryId."""
-        client = AppExchangeV3Client()
+    def test_client_cursor_pagination(self):
+        """Test that AppExchangeClient correctly handles cursor pagination via searchQueryId."""
+        client = AppExchangeClient()
 
         page0_response = {
             "searchQueryUid": "test-uid-12345",
@@ -53,9 +53,9 @@ class TestAppExchangeV3(unittest.TestCase):
                 listing_type="consultants",
             )
 
-    def test_v3_transformation_maps_and_preserves_zeros(self):
-        """Test that AppExchangeV3Transformation maps attributes and preserves 0 and 0.0 values."""
-        transformer = AppExchangeV3Transformation()
+    def test_transformation_maps_and_preserves_zeros(self):
+        """Test that AppExchangeTransformation maps attributes and preserves 0 and 0.0 values."""
+        transformer = AppExchangeTransformation()
         raw_response = {
             "_query_country": "United States of America",
             "_query_practice_size": "",
@@ -88,58 +88,56 @@ class TestAppExchangeV3(unittest.TestCase):
         self.assertEqual(p["reviews"], 0)
         self.assertEqual(p["country"], "United States of America")
         self.assertEqual(p["expertise"], "Agentforce; Data Cloud")
-        # High Res Logo should be prioritized
         self.assertEqual(p["logo"], "https://example.com/logo_highres.png")
 
-    def test_transformation_service_routes_modern_vs_legacy(self):
-        """Test that TransformationService auto-routes to modern or legacy transformers."""
-        service = TransformationService()
-
-        modern_payload = [
-            {
-                "searchQueryUid": "uid-abc",
-                "listings": [
-                    {
-                        "oafId": "a0N_modern_1",
-                        "publisher": "Modern Partner",
-                        "averageRating": 4.8,
-                        "reviewsAmount": 15,
-                    }
-                ],
-                "_data_source": "modern",
-            }
-        ]
-
-        with patch.object(service.v3_transformation, "transform", return_value=[{"id": "a0N_modern_1", "name": "Modern Partner", "listing_url": ""}]) as mock_v3, \
-             patch.object(service.partner_transformation, "transform") as mock_legacy:
-
-            service.transform(modern_payload)
-            mock_v3.assert_called_once()
-            mock_legacy.assert_not_called()
-
-    def test_extraction_service_strategy_selection(self):
-        """Test that ExtractionService selects modern or legacy extractor based on settings."""
+    def test_multi_country_extraction_loop(self):
+        """Test that ExtractionService iterates through multiple countries and maps location codes."""
         service = ExtractionService()
 
-        with patch.object(service, "_extract_modern", return_value=[{"modern": True}]) as mock_modern, \
-             patch.object(service, "_extract_legacy", return_value=[{"legacy": True}]) as mock_legacy:
+        with patch("src.services.extraction_service.filter_config") as mock_filter, \
+             patch.object(service.client, "fetch_all_pages", return_value=[{"listings": []}]) as mock_fetch:
 
-            # Test modern
-            service.data_source = "modern"
-            res = service.extract()
-            self.assertEqual(res, [{"modern": True}])
-            mock_modern.assert_called_once()
-            mock_legacy.assert_not_called()
+            mock_filter.countries = ["United States of America", "Canada"]
+            mock_filter.listing_type = "consultants"
+            mock_filter.page_size = 100
 
-            mock_modern.reset_mock()
-            mock_legacy.reset_mock()
+            responses = service.extract()
 
-            # Test legacy
-            service.data_source = "legacy"
-            res = service.extract()
-            self.assertEqual(res, [{"legacy": True}])
-            mock_legacy.assert_called_once()
-            mock_modern.assert_not_called()
+            self.assertEqual(len(responses), 2)
+            self.assertEqual(mock_fetch.call_count, 2)
+
+            # Check US call
+            mock_fetch.assert_any_call(
+                location="US",
+                listing_type="consultants",
+                page_size=100,
+            )
+            # Check Canada call
+            mock_fetch.assert_any_call(
+                location="CA",
+                listing_type="consultants",
+                page_size=100,
+            )
+
+    def test_global_extraction_when_countries_empty(self):
+        """Test that ExtractionService passes location=None when countries is empty (global extraction)."""
+        service = ExtractionService()
+
+        with patch("src.services.extraction_service.filter_config") as mock_filter, \
+             patch.object(service.client, "fetch_all_pages", return_value=[{"listings": []}]) as mock_fetch:
+
+            mock_filter.countries = []
+            mock_filter.listing_type = "consultants"
+            mock_filter.page_size = 100
+
+            responses = service.extract()
+
+            self.assertEqual(len(responses), 1)
+            mock_fetch.assert_called_once_with(
+                location=None,
+                listing_type="consultants",
+                page_size=100,
+            )
 
 
 if __name__ == "__main__":

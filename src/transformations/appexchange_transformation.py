@@ -1,5 +1,5 @@
 """
-AppExchange Modern REST API (v3) Data Transformation.
+AppExchange REST API Data Transformation.
 
 Normalizes raw JSON responses from recommendations/v3/listings into the
 standardized partner dictionary format expected by the downstream deduplication,
@@ -11,14 +11,14 @@ from typing import Any
 from src.utils.logger import logger
 
 
-class AppExchangeV3Transformation:
-    """Transforms raw AppExchange v3 recommendations API responses into partner dictionaries."""
+class AppExchangeTransformation:
+    """Transforms raw AppExchange recommendations API responses into partner dictionaries."""
 
     def transform(self, raw_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
-        Parses a list of v3 page responses and returns a list of flattened partner dictionaries.
+        Parses a list of page responses and returns a list of flattened partner dictionaries.
         """
-        logger.info("Starting modern AppExchange v3 transformation")
+        logger.info("Starting AppExchange transformation")
         partners = []
 
         try:
@@ -27,12 +27,12 @@ class AppExchangeV3Transformation:
                 partners.extend(parsed)
 
             logger.info(
-                f"Modern v3 transformation: Extracted {len(partners)} partner listings"
+                f"AppExchange transformation: Extracted {len(partners)} partner listings"
             )
             return partners
 
         except Exception:
-            logger.exception("Modern AppExchange v3 transformation failed")
+            logger.exception("AppExchange transformation failed")
             raise
 
     def _parse_response(self, response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -50,7 +50,6 @@ class AppExchangeV3Transformation:
         if not isinstance(logos, list) or not logos:
             return ""
 
-        # Priority preferences: High Res Logo -> Logo -> Big Logo -> first available
         preferred_types = ["High Res Logo", "Logo", "Big Logo", "High Res Svg"]
         for pref in preferred_types:
             for logo in logos:
@@ -59,7 +58,6 @@ class AppExchangeV3Transformation:
                     if media_id:
                         return str(media_id).strip()
 
-        # Fallback to first non-empty mediaId
         for logo in logos:
             if isinstance(logo, dict) and logo.get("mediaId"):
                 return str(logo["mediaId"]).strip()

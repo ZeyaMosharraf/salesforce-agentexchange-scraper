@@ -32,13 +32,8 @@ class Settings:
 
     api_url: str = os.getenv(
         "API_URL",
-        "https://findpartners.salesforce.com/webruntime/api/apex/execute?language=en-US&asGuest=true&htmlEncode=false",
-    )
-    modern_api_url: str = os.getenv(
-        "MODERN_API_URL",
         "https://api.appexchange.salesforce.com/recommendations/v3/listings",
     )
-    data_source: str = os.getenv("DATA_SOURCE", "modern").strip().lower()
     request_timeout: int = _get_int("REQUEST_TIMEOUT", 30)
     user_agent: str = os.getenv(
         "USER_AGENT",

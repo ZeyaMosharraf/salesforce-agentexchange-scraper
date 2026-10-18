@@ -1,11 +1,11 @@
 """
-AppExchange Modern REST API Client (Recommendations v3).
+AppExchange REST API Client.
 
-Interacts with the modern AppExchange REST API endpoint:
+Interacts with the AppExchange REST recommendations API endpoint:
 https://api.appexchange.salesforce.com/recommendations/v3/listings
 
 Supports cursor-based search pagination via `searchQueryId` (derived from
-`searchQueryUid` on page 0) to extract full marketplace result sets (e.g., 2,150+ records).
+`searchQueryUid` on page 0) to extract full marketplace result sets.
 """
 
 from typing import Any
@@ -16,8 +16,8 @@ from src.config import settings
 from src.utils.logger import logger
 
 
-class AppExchangeV3Client(BaseClient):
-    """Client for querying the modern AppExchange recommendations v3 REST API."""
+class AppExchangeClient(BaseClient):
+    """Client for querying the AppExchange recommendations REST API."""
 
     def __init__(self):
         self.session = self._create_session(allowed_methods=["GET"])
@@ -33,7 +33,7 @@ class AppExchangeV3Client(BaseClient):
         page: int = 0,
         page_size: int = 100,
         search_query_id: str | None = None,
-        location: str = "US",
+        location: str | None = None,
         listing_type: str = "consultants",
     ) -> dict[str, Any]:
         """
@@ -43,7 +43,8 @@ class AppExchangeV3Client(BaseClient):
             page: 0-indexed page number.
             page_size: Number of listings per page (default 100).
             search_query_id: Cursor UID returned in searchQueryUid from page 0.
-            location: Regional location filter (e.g. "US", "CA", "GB").
+            location: Optional regional location filter (e.g. "US", "CA").
+                      If None, fetches all records globally without filtering.
             listing_type: Listing category filter ("consultants", "apps", etc.).
 
         Returns:
@@ -51,16 +52,18 @@ class AppExchangeV3Client(BaseClient):
         """
         params: dict[str, Any] = {
             "type": listing_type,
-            "location": location,
             "pageSize": page_size,
             "page": page,
         }
+        if location:
+            params["location"] = location
+
         if search_query_id:
             params["searchQueryId"] = search_query_id
 
         try:
             response = self.session.get(
-                url=settings.modern_api_url,
+                url=settings.api_url,
                 params=params,
                 headers=self.headers,
                 timeout=settings.request_timeout,
@@ -70,23 +73,21 @@ class AppExchangeV3Client(BaseClient):
 
         except requests.RequestException as e:
             logger.exception(
-                f"AppExchange v3 API request failed for page {page} "
-                f"(query_id={search_query_id}): {e}"
+                f"AppExchange API request failed for page {page} "
+                f"(location={location}, query_id={search_query_id}): {e}"
             )
             raise
 
     def fetch_all_pages(
         self,
-        location: str = "US",
+        location: str | None = None,
         listing_type: str = "consultants",
         page_size: int = 100,
         max_pages: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Extracts all listing pages using cursor-based pagination.
-
-        On page 0, retrieves searchQueryUid. For all subsequent pages (1..N),
-        passes searchQueryId=<searchQueryUid> until all listings are retrieved.
+        If location is None, extracts all global records without geographic filter.
 
         Returns:
             List of raw page response dictionaries.
@@ -97,10 +98,11 @@ class AppExchangeV3Client(BaseClient):
         total_count: int | None = None
         total_fetched = 0
 
+        loc_desc = location if location else "Global (All Locations)"
         logger.info(
-            f"Starting modern v3 extraction for type='{listing_type}', location='{location}'"
+            f"Starting AppExchange extraction for type='{listing_type}', location='{loc_desc}'"
         )
-        print(f"\n[Modern v3 Extraction] Querying location: {location} | type: {listing_type}")
+        print(f"\n[Extraction] Location: {loc_desc} | Type: {listing_type}")
 
         while True:
             if max_pages is not None and page >= max_pages:
@@ -143,7 +145,6 @@ class AppExchangeV3Client(BaseClient):
 
         print()
         logger.info(
-            f"Modern v3 extraction completed: {len(responses)} pages, {total_fetched} listings"
+            f"Extraction completed: {len(responses)} pages, {total_fetched} listings for location '{loc_desc}'"
         )
         return responses
-

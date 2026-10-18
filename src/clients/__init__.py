@@ -1,6 +1,5 @@
-from .appexchange_v3_client import AppExchangeV3Client
+from .appexchange_client import AppExchangeClient
 from .base_client import BaseClient
 from .html_client import HtmlClient
-from .salesforce_client import SalesforceClient
 
-__all__ = ["BaseClient", "SalesforceClient", "HtmlClient", "AppExchangeV3Client"]
+__all__ = ["BaseClient", "HtmlClient", "AppExchangeClient"]

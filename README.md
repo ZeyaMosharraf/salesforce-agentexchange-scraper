@@ -122,16 +122,15 @@ salesforce-app-exchange-partner-pipeline/
 ├── src/
 │   ├── clients/
 │   │   ├── __init__.py           # Package export
-│   │   ├── html_client.py        # Client for downloading web pages
-│   │   └── salesforce_client.py  # Client for calling the Salesforce Apex API
+│   │   ├── appexchange_client.py # Client for querying AppExchange REST API
+│   │   ├── base_client.py        # Base HTTP client with retry strategies
+│   │   └── html_client.py        # Thread-safe client for downloading web pages
 │   │
 │   ├── config/
 │   │   ├── __init__.py           # Package export
+│   │   ├── constants.py          # Static constants and lookup tables
+│   │   ├── filters.py            # Extraction filter configurations
 │   │   └── settings.py           # Application environment configurations
-│   │
-│   ├── models/
-│   │   ├── __init__.py           # Package export
-│   │   └── partner_filter.py     # Data filter models and API request payload builder
 │   │
 │   ├── orchestrator/
 │   │   ├── __init__.py           # Package export
@@ -145,9 +144,10 @@ salesforce-app-exchange-partner-pipeline/
 │   │
 │   ├── transformations/
 │   │   ├── __init__.py           # Package export
-│   │   ├── html_transformation.py # Parses HTML web pages using BeautifulSoup
-│   │   ├── merge_transformation.py # Merges API metrics with scraped web data
-│   │   └── partner_transformation.py # Parses raw API partner records
+│   │   ├── appexchange_transformation.py # Maps API responses to standard schema
+│   │   ├── deduplicate_transformation.py # Merges and deduplicates listings
+│   │   ├── html_transformation.py        # Parses detailed web page DOM
+│   │   └── merge_transformation.py       # Harmonizes 31-column dataset
 │   │
 │   ├── utils/
 │   │   ├── __init__.py           # Package export

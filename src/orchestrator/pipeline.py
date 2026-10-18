@@ -30,24 +30,31 @@ class Pipeline:
                 raw_data,
                 "output/raw/partners_raw.json",
             )
+            print("  -> Saved raw responses to output/raw/partners_raw.json")
 
             # 2. Transformation (Deduplication, HTML scraping & Enrichment)
             partners = self.transformation_service.transform(raw_data)
             logger.info("Transformation completed")
 
             # 3. Export Processed Datasets into output/processed/
+            print(f"\n[Export] Saving {len(partners)} enriched partner records...")
             self.export_service.export_json(
                 partners,
                 "output/processed/partners.json",
             )
+            print("  -> Saved JSON dataset to output/processed/partners.json")
 
             self.export_service.export_csv(
                 partners,
                 "output/processed/partners.csv",
             )
+            print("  -> Saved CSV dataset to output/processed/partners.csv")
 
             logger.info("Export completed")
             logger.info("Partner Data Pipeline completed successfully.")
+            print("\n========================================================")
+            print("Pipeline completed successfully! All datasets ready.")
+            print("========================================================\n")
 
         except Exception:
             logger.exception("Partner Data Pipeline failed.")
